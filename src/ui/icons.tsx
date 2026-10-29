@@ -273,3 +273,47 @@ export const NavCar = ({ className }: { className?: string }) => (
     </g>
   </svg>
 );
+
+/* ---- Shell / Home additions ---- */
+export const IconPlus = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+export const IconArrow = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4.5 12h14.5M13.5 6.5 19 12l-5.5 5.5" />
+  </svg>
+);
+/** PULSE demo point coin. */
+export const IconCoin = (p: P) => (
+  <svg {...base(p)}>
+    <ellipse cx="12" cy="7" rx="7.5" ry="3" />
+    <path d="M4.5 7v5c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V7M4.5 12v5c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-5" />
+  </svg>
+);
+export const IconBroadcast = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="2" />
+    <path d="M8.2 8.2a5.4 5.4 0 0 0 0 7.6M15.8 8.2a5.4 5.4 0 0 1 0 7.6M5.3 5.3a9.5 9.5 0 0 0 0 13.4M18.7 5.3a9.5 9.5 0 0 1 0 13.4" />
+  </svg>
+);
+export const IconTicket = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M3.5 7.5a1 1 0 0 1 1-1h15a1 1 0 0 1 1 1v2.6a2 2 0 0 0 0 3.8v2.6a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-2.6a2 2 0 0 0 0-3.8z" />
+    <path d="M15 7v1.6M15 11.2v1.6M15 15.4V17" />
+  </svg>
+);
+export const IconChequered = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M5 21V4" />
+    <path d="M5 4h14v10H5" />
+    <path d="M5 4h3.5v3.3H5zM12 4h3.5v3.3H12zM8.5 7.3H12v3.4H8.5zM15.5 7.3H19v3.4h-3.5zM5 10.7h3.5V14H5zM12 10.7h3.5V14H12z" fill="currentColor" strokeWidth={0} />
+  </svg>
+);
+export const IconRefund = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5" />
+    <path d="M4 4v4.5h4.5" />
+  </svg>
+);
