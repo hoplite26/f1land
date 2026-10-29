@@ -12,6 +12,7 @@ import type { F1CarModel, ModelQuality, RoadCarModel, TyreLetter } from '@/three
 import { createCarShadow, createF1Car, createRoadCar } from '@/three/models/cars';
 import { buildTrackMeshes, toWorld, yawFromHeading, type TrackMeshes } from '@/three/track/trackMesh';
 import { buildEnvironment, type EnvironmentHandle } from '@/three/track/environment';
+import { createSkyDome, type PropsAtmosphere } from '@/three/models/props';
 import { CameraRig, type CameraMode, type CameraSubject } from './cameraRig';
 import { MotionTrail, ParticleSystem, SelectionRing, Shockwaves } from './effects';
 import { LabelLayer } from './labels';
@@ -76,6 +77,8 @@ export class RaceScene {
   private disposed = false;
   private contextLost = false;
   private sun: THREE.DirectionalLight | null = null;
+  private sunDir = new THREE.Vector3(0, 1, 0);
+  private envRT: THREE.WebGLRenderTarget | null = null;
   private tmpV = new THREE.Vector3();
   private fwd = new THREE.Vector3();
   private lastFrameT = -1;
@@ -129,21 +132,24 @@ export class RaceScene {
     const q = this.opts.quality;
     const tick = () => new Promise<void>((r) => setTimeout(r, 0));
     onProgress?.(0.05);
-    this.setupLighting(circuit);
     this.track = buildTrackMeshes(circuit, model, q);
     this.scene.add(this.track.group);
     onProgress?.(0.25);
     await tick();
+    if (this.disposed) return;
     this.env = buildEnvironment({ circuit, model, track: this.track, quality: q, scene: this.scene, renderer: this.renderer });
     this.scene.add(this.env.group);
+    this.setupLighting(circuit, this.env.atmosphere);
     onProgress?.(0.6);
     await tick();
+    if (this.disposed) return;
     let i = 0;
     for (const id of driverIds) {
       this.addCar(id);
       if (++i % 6 === 0) {
         onProgress?.(0.6 + (0.35 * i) / driverIds.length);
         await tick();
+        if (this.disposed) return;
       }
     }
     const sc: RoadCarModel = createRoadCar(circuit.id === 'mc-1929' || circuit.id === 'gb-1948' || circuit.id === 'jp-1962' ? 'safety-aston' : 'safety-mercedes', q);
@@ -156,32 +162,74 @@ export class RaceScene {
     onProgress?.(1);
   }
 
-  private setupLighting(c: CircuitData): void {
+  private setupLighting(c: CircuitData, atm: PropsAtmosphere): void {
     const tod = c.timeOfDay;
-    const sky = tod === 'night' ? 0x1a2440 : tod === 'dusk' ? 0x6a5a7a : 0x9cc6ff;
-    const ground = tod === 'night' ? 0x0c0e12 : tod === 'dusk' ? 0x2a2018 : 0x3d3a2c;
-    const hemi = new THREE.HemisphereLight(sky, ground, tod === 'night' ? 1.35 : tod === 'dusk' ? 1.2 : 1.35);
+    const q = this.opts.quality;
+    // Night races are floodlit: bright cool overhead fill instead of a dim moon.
+    const hemi = new THREE.HemisphereLight(
+      tod === 'night' ? 0x9db0d8 : atm.hemiSky,
+      atm.hemiGround,
+      tod === 'night' ? 1.55 : tod === 'dusk' ? 1.25 : atm.hemiIntensity,
+    );
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(tod === 'night' ? 0xcfe0ff : tod === 'dusk' ? 0xffb27a : 0xfff3e0, tod === 'night' ? 1.35 : tod === 'dusk' ? 1.9 : 2.6);
-    sun.position.set(-400, tod === 'dusk' ? 160 : 600, 300);
-    if (this.opts.quality === 'high') {
+    const sun = new THREE.DirectionalLight(tod === 'night' ? 0xe6eeff : atm.sunColor, tod === 'night' ? 1.6 : tod === 'dusk' ? 1.9 : atm.sunIntensity);
+    this.sunDir.copy(tod === 'night' ? new THREE.Vector3(0.25, 0.92, 0.3).normalize() : atm.sunDirection);
+    sun.position.copy(this.sunDir).multiplyScalar(400);
+    if (q === 'high') {
       sun.castShadow = true;
-      sun.shadow.mapSize.set(1024, 1024);
+      sun.shadow.mapSize.set(2048, 2048);
       const cam = sun.shadow.camera as THREE.OrthographicCamera;
-      cam.left = -60;
-      cam.right = 60;
-      cam.top = 60;
-      cam.bottom = -60;
+      cam.left = -70;
+      cam.right = 70;
+      cam.top = 70;
+      cam.bottom = -70;
       cam.near = 10;
-      cam.far = 1600;
-      sun.shadow.bias = -0.0005;
+      cam.far = 900;
+      sun.shadow.bias = -0.0004;
+      sun.shadow.normalBias = 0.02;
     }
     this.scene.add(sun, sun.target);
     this.sun = sun;
-    const fogColor = tod === 'night' ? 0x070a12 : tod === 'dusk' ? 0x3c3040 : 0xa8c4dc;
+    this.renderer.toneMappingExposure = atm.exposure * (tod === 'night' ? 1.05 : 1);
     const extent = Math.max(c.bounds.maxX - c.bounds.minX, c.bounds.maxY - c.bounds.minY);
-    this.scene.fog = new THREE.Fog(fogColor, extent * 0.9, extent * 3.4);
-    this.scene.background = new THREE.Color(fogColor);
+    // Exponential haze: about 50% at ~1.4× the circuit extent, never fully opaque near the action.
+    const density = Math.min(atm.fogDensity, 0.85 / Math.max(800, extent * 1.4));
+    this.scene.fog = new THREE.FogExp2(atm.fogColor, density);
+    this.scene.background = atm.fogColor.clone();
+    this.setupEnvMap(atm, tod);
+  }
+
+  /** Prefiltered sky (+ floodlight panels at night) for car paint / glass reflections. */
+  private setupEnvMap(atm: PropsAtmosphere, tod: CircuitData['timeOfDay']): void {
+    const envScene = new THREE.Scene();
+    const dome = createSkyDome(tod, this.circuit!.theme);
+    envScene.add(dome.mesh);
+    const extras: Array<{ dispose(): void }> = [];
+    if (tod !== 'day') {
+      const panelGeo = new THREE.PlaneGeometry(9, 3);
+      const panelMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.96, 0.9).multiplyScalar(tod === 'night' ? 6 : 3), side: THREE.DoubleSide });
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 + 0.3;
+        const p = new THREE.Mesh(panelGeo, panelMat);
+        p.position.set(Math.cos(a) * 8, 1.6 + (i % 2) * 0.8, Math.sin(a) * 8);
+        p.lookAt(0, 0, 0);
+        envScene.add(p);
+      }
+      extras.push(panelGeo, panelMat);
+    }
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(9, 24), new THREE.MeshBasicMaterial({ color: atm.hemiGround.clone().multiplyScalar(0.35) }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -1.2;
+    envScene.add(ground);
+    extras.push(ground.geometry, ground.material as THREE.Material);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const rt = pmrem.fromScene(envScene, 0.03, 0.1, 50);
+    pmrem.dispose();
+    dome.dispose();
+    extras.forEach((e) => e.dispose());
+    this.envRT = rt;
+    this.scene.environment = rt.texture;
+    this.scene.environmentIntensity = tod === 'night' ? 0.9 : 0.75;
   }
 
   private setupPost(): void {
@@ -341,7 +389,7 @@ export class RaceScene {
     this.env?.update(this.clockT, this.excitement, ip?.b ?? null);
     if (this.sun && subject && this.opts.quality === 'high') {
       this.sun.target.position.copy(subject.pos);
-      this.sun.position.copy(subject.pos).add(this.tmpV.set(-120, 260, 90));
+      this.sun.position.copy(subject.pos).addScaledVector(this.sunDir, 300);
     }
     if (this.composer) this.composer.render(dt);
     else this.renderer.render(this.scene, this.rig.camera);
@@ -525,6 +573,7 @@ export class RaceScene {
     this.rig.dispose();
     this.labels.dispose();
     this.composer?.dispose();
+    this.envRT?.dispose();
     this.renderer.dispose();
     canvas.remove();
   }
