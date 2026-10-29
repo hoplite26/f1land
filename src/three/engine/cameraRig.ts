@@ -172,7 +172,8 @@ export class CameraRig {
 
   /** No transition or fly-in in progress. */
   get settled(): boolean {
-    return this.fly === null && this.transT >= 1 && this.hasPose;
+    const orbit = this.mode === 'orbit' || this.mode === 'overview';
+    return this.fly === null && this.hasPose && (orbit || (this.transT >= 1 && this.pos.distanceTo(this.idealPos) < 2));
   }
 
   /** Current concrete shot (director resolves to one of these). */
@@ -327,22 +328,22 @@ export class CameraRig {
           stiffPos = 6;
           break;
         }
-        const back = 10.5 + Math.min(5, v * 0.045);
-        this.onTrack(s - back, lat * 0.75, 3.1 + Math.min(1.2, v * 0.012), this.idealPos);
-        this.idealLook.copy(subject.pos).addScaledVector(f, 7).addScaledVector(UP, 0.9);
-        this.idealFov = 54 + Math.min(12, v * 0.11);
-        stiffPos = 9;
+        const back = 7.2 + Math.min(3, v * 0.03);
+        this.onTrack(s - back, lat * 0.85, 2.25 + Math.min(0.6, v * 0.006), this.idealPos);
+        this.idealLook.copy(subject.pos).addScaledVector(f, 10).addScaledVector(UP, 0.7);
+        this.idealFov = 56 + Math.min(12, v * 0.1);
+        stiffPos = 10;
         break;
       }
       case 'heli': {
-        this.heliAngle += dt * 0.12;
-        const r = 78;
+        this.heliAngle += dt * 0.1;
+        const r = 62;
         const a = this.heliAngle;
-        this.idealPos.copy(subject.pos).add(this.tmp.set(Math.cos(a) * r, 58, Math.sin(a) * r)).addScaledVector(f, 25);
-        this.idealLook.copy(subject.pos).addScaledVector(f, 14);
-        this.idealFov = 34;
-        stiffPos = 2.5;
-        stiffLook = 6;
+        this.idealPos.copy(subject.pos).add(this.tmp.set(Math.cos(a) * r, 46, Math.sin(a) * r)).addScaledVector(f, 18);
+        this.idealLook.copy(subject.pos).addScaledVector(f, 6);
+        this.idealFov = 40;
+        stiffPos = 3;
+        stiffLook = 8;
         break;
       }
       case 'onboard': {

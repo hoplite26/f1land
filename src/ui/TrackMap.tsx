@@ -184,14 +184,18 @@ export const TrackMap = memo(function TrackMap({
         const d = DRIVER_BY_ID[c.id];
         const color = d ? TEAM_BY_ID[d.teamId]!.color : '#fff';
         const big = c.kind === 'follow' || c.kind === 'rival';
+        // Keep driver tags inside the viewBox: flip left / below near the right / top edges.
+        const lw = c.position ? 30 : 22;
+        const lx = x + 6 + lw > width - 1 ? -6 - lw : 6;
+        const ly = y < 14 ? 9 : -7;
         return (
           <g key={c.id} className="trackmap__dot" transform={`translate(${x.toFixed(1)},${y.toFixed(1)})`} opacity={stale ? 0.5 : 1}>
             {c.kind === 'follow' && <circle r={9} fill="none" stroke="var(--lime)" strokeWidth={1.4} opacity={0.8} />}
             {c.kind === 'rival' && <circle r={8} fill="none" stroke="var(--cyan)" strokeWidth={1.2} opacity={0.8} />}
             <circle r={big ? 4.6 : 3.3} fill={color} stroke="#05080a" strokeWidth={1.2} />
             {(c.kind === 'follow' || c.kind === 'rival' || c.kind === 'near') && d && (
-              <g transform="translate(6,-7)">
-                <rect x={0} y={-6} width={c.position ? 30 : 22} height={11} rx={3} fill="rgba(5,8,10,0.9)" stroke={c.kind === 'follow' ? 'var(--lime)' : c.kind === 'rival' ? 'var(--cyan)' : 'rgba(255,255,255,.25)'} strokeWidth={0.8} />
+              <g transform={`translate(${lx},${ly})`}>
+                <rect x={0} y={-6} width={lw} height={11} rx={3} fill="rgba(5,8,10,0.9)" stroke={c.kind === 'follow' ? 'var(--lime)' : c.kind === 'rival' ? 'var(--cyan)' : 'rgba(255,255,255,.25)'} strokeWidth={0.8} />
                 <text x={3} y={2} className="trackmap__label">
                   {c.position ? `${c.position} ` : ''}
                   {d.code}

@@ -316,7 +316,7 @@ export function HomeScreen() {
                 </span>
                 <span className="quick__label clamp-2">{label}</span>
                 <span className={`quick__state num ${lp ? 'lime' : 'muted'}`}>
-                  {lp ? (best ? t('home2.upTo', { x: best.toFixed(1) }) : t('pool.open')) : t('home2.soon')}
+                  {!lp ? t('home2.soon') : best && best < 50 ? t('home2.upTo', { x: best.toFixed(1) }) : t('ui.joined', { n: fmtNumber(lp.book.players) })}
                 </span>
               </Card>
             );

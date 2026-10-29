@@ -70,7 +70,7 @@ export class RaceScene {
   private labelIds: string[] = [];
   private ringA = new SelectionRing('#c6ff3d', 10);
   private ringB = new SelectionRing('#2fe6ff', 9);
-  private trail = new MotionTrail('#c6ff3d');
+  private trail = new MotionTrail('#c6ff3d', 40);
   private beaconA = new Beacon('#c6ff3d');
   private beaconB = new Beacon('#2fe6ff', 20, 0.9);
   private crews = new PitCrews();
@@ -612,10 +612,14 @@ export class RaceScene {
   }
 
   private updateMarkers(): void {
-    const camPos = this.rig.camera.position;
+    const cam = this.rig.camera;
+    const camPos = cam.position;
+    // Show a marker only when the car itself would be just a few pixels tall on screen.
+    const pxPerRad = this.container.clientHeight / THREE.MathUtils.degToRad(cam.fov);
     for (const e of this.cars.values()) {
       const dist = camPos.distanceTo(e.pos);
-      const show = e.visible && dist > 160;
+      const carPx = (5.6 / Math.max(1, dist)) * pxPerRad;
+      const show = e.visible && carPx < 16;
       e.marker.visible = show;
       if (show) {
         e.marker.position.set(e.pos.x, 2.5, e.pos.z);
@@ -632,7 +636,7 @@ export class RaceScene {
       if (!this.opts.reducedMotion) z.uniforms.uTime.value += dt;
       const sel = this.selectedZone === z.sector ? 1 : 0;
       z.uniforms.uSelected.value += (sel - z.uniforms.uSelected.value) * k;
-      const base = this.zoneVisible ? (this.selectedZone ? 0.12 : 0.42) : 0;
+      const base = this.zoneVisible ? (this.selectedZone ? 0.08 : 0.24) : 0;
       z.uniforms.uIntensity.value += (base - z.uniforms.uIntensity.value) * k;
       const on = z.uniforms.uIntensity.value + z.uniforms.uSelected.value > 0.01;
       z.floor.visible = on;
