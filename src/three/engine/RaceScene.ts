@@ -12,9 +12,11 @@ import type { F1CarModel, ModelQuality, RoadCarModel, TyreLetter } from '@/three
 import { createCarShadow, createF1Car, createRoadCar } from '@/three/models/cars';
 import { buildTrackMeshes, toWorld, yawFromHeading, type TrackMeshes } from '@/three/track/trackMesh';
 import { buildEnvironment, type EnvironmentHandle } from '@/three/track/environment';
+import { createSkyDome, type PropsAtmosphere } from '@/three/models/props';
 import { CameraRig, type CameraMode, type CameraSubject } from './cameraRig';
-import { MotionTrail, ParticleSystem, SelectionRing, Shockwaves } from './effects';
-import { LabelLayer } from './labels';
+import { Beacon, MotionTrail, ParticleSystem, SelectionRing, Shockwaves } from './effects';
+import { PitCrews } from './pitCrew';
+import { LabelLayer, type LabelTarget, type ZoneTag } from './labels';
 
 export interface SceneOptions {
   quality: ModelQuality;
@@ -38,6 +40,11 @@ interface CarEntry {
   s: number;
   visible: boolean;
   brakeSmooth: number;
+  teamColor: string;
+  /** Arc length along the pit lane while in the pits (projection hint). */
+  pitS: number;
+  /** Smoothed lateral shift into the working lane at the box. */
+  boxShift: number;
 }
 
 const TYRE_LETTER: Record<string, TyreLetter> = { SOFT: 'S', MEDIUM: 'M', HARD: 'H', INTERMEDIATE: 'I', WET: 'W' };
@@ -63,19 +70,31 @@ export class RaceScene {
   private labelIds: string[] = [];
   private ringA = new SelectionRing('#c6ff3d', 10);
   private ringB = new SelectionRing('#2fe6ff', 9);
-  private trail = new MotionTrail('#2fe6ff');
+  private trail = new MotionTrail('#c6ff3d');
+  private beaconA = new Beacon('#c6ff3d');
+  private beaconB = new Beacon('#2fe6ff', 20, 0.9);
+  private crews = new PitCrews();
+  private medical: RoadCarModel | null = null;
+  private byIdA = new Map<string, SimFrame['cars'][number]>();
+  private sparkV = new THREE.Vector3();
+  private sparkC = new THREE.Color(1, 0.75, 0.35);
   private particles = new ParticleSystem(1200);
   private sparks = new ParticleSystem(500, 6);
   private waves = new Shockwaves();
   private labels: LabelLayer;
+  private labelBuf: LabelTarget[] = [];
+  private zoneTagBuf: ZoneTag[] = [];
   private clockT = 0;
   private selectedZone: 1 | 2 | 3 | null = null;
   private zoneVisible = true;
   private trackState: TrackState = 'GREEN';
+  private sectorFlags: boolean[] = [false, false, false];
   private excitement = 0.2;
   private disposed = false;
   private contextLost = false;
   private sun: THREE.DirectionalLight | null = null;
+  private sunDir = new THREE.Vector3(0, 1, 0);
+  private envRT: THREE.WebGLRenderTarget | null = null;
   private tmpV = new THREE.Vector3();
   private fwd = new THREE.Vector3();
   private lastFrameT = -1;
@@ -94,6 +113,8 @@ export class RaceScene {
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = q === 'high';
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Stats cover the whole frame (scene + post passes); reset manually in render().
+    this.renderer.info.autoReset = false;
     const canvas = this.renderer.domElement;
     canvas.className = 'scene-canvas';
     canvas.setAttribute('aria-hidden', 'true');
@@ -104,7 +125,7 @@ export class RaceScene {
     this.rig = new CameraRig(canvas, Math.max(1, w) / Math.max(1, h));
     this.rig.reducedMotion = opts.reducedMotion;
     this.labels = new LabelLayer(opts.labelLayer);
-    this.scene.add(this.ringA.mesh, this.ringB.mesh, this.trail.mesh, this.particles.points, this.sparks.points, this.waves.group);
+    this.scene.add(this.ringA.mesh, this.ringB.mesh, this.trail.mesh, this.particles.points, this.sparks.points, this.waves.group, this.beaconA.mesh, this.beaconB.mesh, this.crews.mesh);
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('pointerup', this.onPointerUp);
     this.resizeObs = new ResizeObserver(() => this.resize());
@@ -116,6 +137,12 @@ export class RaceScene {
     this.contextLost = true;
     this.opts.onContextLost();
   };
+
+  /** Per-frame renderer statistics (draw calls / triangles of the last frame incl. post). */
+  stats(): { calls: number; triangles: number; geometries: number; textures: number; programs: number; shot: string } {
+    const i = this.renderer.info;
+    return { calls: i.render.calls, triangles: i.render.triangles, geometries: i.memory.geometries, textures: i.memory.textures, programs: i.programs?.length ?? 0, shot: this.rig.currentShot };
+  }
 
   /** Test hook / QA19: simulate a lost WebGL context. */
   loseContext(): void {
@@ -129,21 +156,24 @@ export class RaceScene {
     const q = this.opts.quality;
     const tick = () => new Promise<void>((r) => setTimeout(r, 0));
     onProgress?.(0.05);
-    this.setupLighting(circuit);
     this.track = buildTrackMeshes(circuit, model, q);
     this.scene.add(this.track.group);
     onProgress?.(0.25);
     await tick();
+    if (this.disposed) return;
     this.env = buildEnvironment({ circuit, model, track: this.track, quality: q, scene: this.scene, renderer: this.renderer });
     this.scene.add(this.env.group);
+    this.setupLighting(circuit, this.env.atmosphere);
     onProgress?.(0.6);
     await tick();
+    if (this.disposed) return;
     let i = 0;
     for (const id of driverIds) {
       this.addCar(id);
       if (++i % 6 === 0) {
         onProgress?.(0.6 + (0.35 * i) / driverIds.length);
         await tick();
+        if (this.disposed) return;
       }
     }
     const sc: RoadCarModel = createRoadCar(circuit.id === 'mc-1929' || circuit.id === 'gb-1948' || circuit.id === 'jp-1962' ? 'safety-aston' : 'safety-mercedes', q);
@@ -151,37 +181,83 @@ export class RaceScene {
     sc.setLightBar(true);
     this.scene.add(sc.root);
     this.sc = sc;
+    this.rig.setTvSpots(this.env.tvSpots);
+    this.rig.setCorridor(this.env.layout.barrier);
     this.rig.setTrack(model.track, circuit.widthM / 2, circuit.bounds);
+    this.rig.onShot = (shot) => this.labels.setShot(shot);
+    this.labels.setShot(this.rig.currentShot);
     this.setupPost();
     onProgress?.(1);
   }
 
-  private setupLighting(c: CircuitData): void {
+  private setupLighting(c: CircuitData, atm: PropsAtmosphere): void {
     const tod = c.timeOfDay;
-    const sky = tod === 'night' ? 0x1a2440 : tod === 'dusk' ? 0x6a5a7a : 0x9cc6ff;
-    const ground = tod === 'night' ? 0x0c0e12 : tod === 'dusk' ? 0x2a2018 : 0x3d3a2c;
-    const hemi = new THREE.HemisphereLight(sky, ground, tod === 'night' ? 1.35 : tod === 'dusk' ? 1.2 : 1.35);
+    const q = this.opts.quality;
+    // Night races are floodlit: bright cool overhead fill instead of a dim moon.
+    const hemi = new THREE.HemisphereLight(
+      tod === 'night' ? 0x9db0d8 : atm.hemiSky,
+      atm.hemiGround,
+      tod === 'night' ? 1.55 : tod === 'dusk' ? 1.25 : atm.hemiIntensity,
+    );
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(tod === 'night' ? 0xcfe0ff : tod === 'dusk' ? 0xffb27a : 0xfff3e0, tod === 'night' ? 1.35 : tod === 'dusk' ? 1.9 : 2.6);
-    sun.position.set(-400, tod === 'dusk' ? 160 : 600, 300);
-    if (this.opts.quality === 'high') {
+    const sun = new THREE.DirectionalLight(tod === 'night' ? 0xe6eeff : atm.sunColor, tod === 'night' ? 1.6 : tod === 'dusk' ? 1.9 : atm.sunIntensity);
+    this.sunDir.copy(tod === 'night' ? new THREE.Vector3(0.25, 0.92, 0.3).normalize() : atm.sunDirection);
+    sun.position.copy(this.sunDir).multiplyScalar(400);
+    if (q === 'high') {
       sun.castShadow = true;
-      sun.shadow.mapSize.set(1024, 1024);
+      sun.shadow.mapSize.set(2048, 2048);
       const cam = sun.shadow.camera as THREE.OrthographicCamera;
-      cam.left = -60;
-      cam.right = 60;
-      cam.top = 60;
-      cam.bottom = -60;
+      cam.left = -70;
+      cam.right = 70;
+      cam.top = 70;
+      cam.bottom = -70;
       cam.near = 10;
-      cam.far = 1600;
-      sun.shadow.bias = -0.0005;
+      cam.far = 900;
+      sun.shadow.bias = -0.0004;
+      sun.shadow.normalBias = 0.02;
     }
     this.scene.add(sun, sun.target);
     this.sun = sun;
-    const fogColor = tod === 'night' ? 0x070a12 : tod === 'dusk' ? 0x3c3040 : 0xa8c4dc;
+    this.renderer.toneMappingExposure = atm.exposure * (tod === 'night' ? 1.05 : 1);
     const extent = Math.max(c.bounds.maxX - c.bounds.minX, c.bounds.maxY - c.bounds.minY);
-    this.scene.fog = new THREE.Fog(fogColor, extent * 0.9, extent * 3.4);
-    this.scene.background = new THREE.Color(fogColor);
+    // Exponential haze: about 50% at ~1.4× the circuit extent, never fully opaque near the action.
+    const density = Math.min(atm.fogDensity, 0.85 / Math.max(800, extent * 1.4));
+    this.scene.fog = new THREE.FogExp2(atm.fogColor, density);
+    this.scene.background = atm.fogColor.clone();
+    this.setupEnvMap(atm, tod);
+  }
+
+  /** Prefiltered sky (+ floodlight panels at night) for car paint / glass reflections. */
+  private setupEnvMap(atm: PropsAtmosphere, tod: CircuitData['timeOfDay']): void {
+    const envScene = new THREE.Scene();
+    const dome = createSkyDome(tod, this.circuit!.theme);
+    envScene.add(dome.mesh);
+    const extras: Array<{ dispose(): void }> = [];
+    if (tod !== 'day') {
+      const panelGeo = new THREE.PlaneGeometry(9, 3);
+      const panelMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.96, 0.9).multiplyScalar(tod === 'night' ? 6 : 3), side: THREE.DoubleSide });
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 + 0.3;
+        const p = new THREE.Mesh(panelGeo, panelMat);
+        p.position.set(Math.cos(a) * 8, 1.6 + (i % 2) * 0.8, Math.sin(a) * 8);
+        p.lookAt(0, 0, 0);
+        envScene.add(p);
+      }
+      extras.push(panelGeo, panelMat);
+    }
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(9, 24), new THREE.MeshBasicMaterial({ color: atm.hemiGround.clone().multiplyScalar(0.35) }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -1.2;
+    envScene.add(ground);
+    extras.push(ground.geometry, ground.material as THREE.Material);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const rt = pmrem.fromScene(envScene, 0.03, 0.1, 50);
+    pmrem.dispose();
+    dome.dispose();
+    extras.forEach((e) => e.dispose());
+    this.envRT = rt;
+    this.scene.environment = rt.texture;
+    this.scene.environmentIntensity = tod === 'night' ? 0.9 : 0.75;
   }
 
   private setupPost(): void {
@@ -210,7 +286,7 @@ export class RaceScene {
     marker.renderOrder = 20;
     marker.center.set(0.5, 0);
     this.scene.add(model.root, shadow, marker);
-    this.cars.set(id, { id, model, shadow, marker, tyre: null, spin: 0, flap: 0, pos: new THREE.Vector3(), yaw: 0, speed: 0, s: 0, visible: true, brakeSmooth: 0 });
+    this.cars.set(id, { id, model, shadow, marker, tyre: null, spin: 0, flap: 0, pos: new THREE.Vector3(), yaw: 0, speed: 0, s: 0, visible: true, brakeSmooth: 0, teamColor: team.color, pitS: -1, boxShift: 0 });
   }
 
   /* ---------------- state from the app ---------------- */
@@ -272,6 +348,19 @@ export class RaceScene {
 
   setTrackState(s: TrackState): void {
     this.trackState = s;
+    this.env?.setFlags(s, this.sectorFlags);
+  }
+
+  /** Per-sector yellow flags (marshal LED panels). */
+  setSectorFlags(flags: readonly boolean[]): void {
+    if (flags.length === this.sectorFlags.length && flags.every((f, i) => f === this.sectorFlags[i])) return;
+    this.sectorFlags = [...flags];
+    this.env?.setFlags(this.trackState, this.sectorFlags);
+  }
+
+  /** Race positions for the labels. */
+  setPositions(map: Map<string, number>): void {
+    this.labels.setPositions(map);
   }
 
   setExcitement(x: number): void {
@@ -313,8 +402,12 @@ export class RaceScene {
     return { a: this.frames[0]!, b: this.frames[0]!, k: 0 };
   }
 
+  /** Rendered frames (dev tooling waits on this). */
+  frameCount = 0;
+
   render(dt: number, stale = false): void {
     if (this.disposed || this.contextLost || !this.circuit) return;
+    this.frameCount++;
     this.clockT += dt;
     const latest = this.frames[this.frames.length - 1];
     if (latest) {
@@ -341,21 +434,30 @@ export class RaceScene {
     this.env?.update(this.clockT, this.excitement, ip?.b ?? null);
     if (this.sun && subject && this.opts.quality === 'high') {
       this.sun.target.position.copy(subject.pos);
-      this.sun.position.copy(subject.pos).add(this.tmpV.set(-120, 260, 90));
+      this.sun.position.copy(subject.pos).addScaledVector(this.sunDir, 300);
     }
+    this.renderer.info.reset();
     if (this.composer) this.composer.render(dt);
     else this.renderer.render(this.scene, this.rig.camera);
-    this.labels.update(this.rig.camera, this.container, this.labelTargets());
+    this.labels.update(this.rig.camera, this.container, this.labelTargets(), this.zoneTags(), this.selectedZone);
   }
 
-  private labelTargets(): Array<{ id: string; pos: THREE.Vector3; kind: 'follow' | 'rival' | 'near' }> {
-    const out: Array<{ id: string; pos: THREE.Vector3; kind: 'follow' | 'rival' | 'near' }> = [];
+  private labelTargets(): LabelTarget[] {
+    const out = this.labelBuf;
+    out.length = 0;
     for (const id of this.labelIds) {
       const c = this.cars.get(id);
       if (!c || !c.visible) continue;
       out.push({ id, pos: c.pos, kind: id === this.followId ? 'follow' : id === this.rivalId ? 'rival' : 'near' });
     }
+    if (this.sc?.root.visible) out.push({ id: '__sc', pos: this.sc.root.position, kind: 'sc' });
     return out;
+  }
+
+  private zoneTags(): ZoneTag[] | null {
+    if (!this.track || !this.zoneVisible) return null;
+    if (!this.zoneTagBuf.length) this.track.sectorAnchors.forEach((pos, i) => this.zoneTagBuf.push({ sector: (i + 1) as 1 | 2 | 3, pos }));
+    return this.zoneTagBuf;
   }
 
   private subject(): CameraSubject | null {
@@ -367,7 +469,9 @@ export class RaceScene {
   }
 
   private applyFrames(a: SimFrame, b: SimFrame, k: number, dt: number): void {
-    const byIdA = new Map(a.cars.map((c) => [c.id, c]));
+    const byIdA = this.byIdA;
+    byIdA.clear();
+    for (const c of a.cars) byIdA.set(c.id, c);
     for (const cb of b.cars) {
       const e = this.cars.get(cb.id);
       if (!e) continue;
@@ -376,9 +480,28 @@ export class RaceScene {
       const y = ca.y + (cb.y - ca.y) * k;
       const jump = Math.hypot(cb.x - ca.x, cb.y - ca.y) > 60;
       const h = jump ? cb.heading : lerpAngle(ca.heading, cb.heading, k);
-      toWorld(jump ? cb.x : x, jump ? cb.y : y, 0, e.pos);
-      e.yaw = yawFromHeading(h);
       e.speed = ca.speed + (cb.speed - ca.speed) * k;
+      let px = jump ? cb.x : x;
+      let py = jump ? cb.y : y;
+      // The sim drives the pit lane centreline; slide into the working lane at the box.
+      let shift = 0;
+      if (cb.inPit && this.model && this.circuit) {
+        const pit = this.model.pit;
+        const pr = pit.project(px, py, e.pitS >= 0 ? e.pitS : undefined, 60);
+        e.pitS = pr.s;
+        const pl = this.circuit.pitLane;
+        if (pr.s > pl.boxesStartS - 30 && pr.s < pl.boxesEndS + 30) shift = THREE.MathUtils.clamp((24 - e.speed) / 16, 0, 1);
+      } else e.pitS = -1;
+      e.boxShift += (shift - e.boxShift) * Math.min(1, dt * 3);
+      if (e.boxShift > 0.01 && this.model && this.circuit) {
+        const side = this.circuit.pitLane.side === 'left' ? 1 : -1;
+        const hd = this.model.pit.headingAt(e.pitS);
+        const off = side * 3.1 * e.boxShift;
+        px += -Math.sin(hd) * off;
+        py += Math.cos(hd) * off;
+      }
+      toWorld(px, py, 0, e.pos);
+      e.yaw = yawFromHeading(h);
       e.s = cb.s;
       e.visible = cb.visible;
       const root = e.model.root;
@@ -408,11 +531,12 @@ export class RaceScene {
         e.model.setTyre(letter);
       }
       e.model.setHighlight(cb.id === this.followId ? 1 : 0);
+      this.crews.update(cb.id, cb.visible && cb.inPit && e.boxShift > 0.85 && e.speed < 0.6, e.pos, e.yaw, e.teamColor, this.clockT);
       // Floor sparks at high speed on straights (cosmetic only).
       if (!this.opts.reducedMotion && this.opts.quality !== 'low' && cb.visible && e.speed > 78 && Math.random() < dt * 3.5) {
         const back = this.tmpV.set(Math.sin(e.yaw), 0, Math.cos(e.yaw)).multiplyScalar(-2.4).add(e.pos).setY(0.08);
         for (let n = 0; n < 6; n++)
-          this.sparks.emit(back, new THREE.Vector3((Math.random() - 0.5) * 3, Math.random() * 2.2, (Math.random() - 0.5) * 3).addScaledVector(this.fwd.set(Math.sin(e.yaw), 0, Math.cos(e.yaw)), -e.speed * 0.25), new THREE.Color(1, 0.75, 0.35), 0.35, 0.45);
+          this.sparks.emit(back, this.sparkV.set((Math.random() - 0.5) * 3, Math.random() * 2.2, (Math.random() - 0.5) * 3).addScaledVector(this.fwd.set(Math.sin(e.yaw), 0, Math.cos(e.yaw)), -e.speed * 0.25), this.sparkC, 0.35, 0.45);
       }
     }
     // Safety car
@@ -442,7 +566,7 @@ export class RaceScene {
       e.marker.visible = show;
       if (show) {
         e.marker.position.set(e.pos.x, 2.5, e.pos.z);
-        const s = e.id === this.followId ? 0.05 : e.id === this.rivalId ? 0.042 : 0.03;
+        const s = e.id === this.followId ? 0.034 : e.id === this.rivalId ? 0.028 : 0.018;
         e.marker.scale.set(s, s, 1);
       }
     }
@@ -450,13 +574,17 @@ export class RaceScene {
 
   private updateZones(dt: number): void {
     if (!this.track) return;
+    const k = Math.min(1, dt * (this.opts.reducedMotion ? 60 : 6));
     for (const z of this.track.zones) {
-      z.uniforms.uTime.value += dt;
+      if (!this.opts.reducedMotion) z.uniforms.uTime.value += dt;
       const sel = this.selectedZone === z.sector ? 1 : 0;
-      z.uniforms.uSelected.value += (sel - z.uniforms.uSelected.value) * Math.min(1, dt * (this.opts.reducedMotion ? 60 : 7));
-      z.uniforms.uIntensity.value = this.zoneVisible ? (this.selectedZone ? 0.05 : 0.14) : 0;
-      z.floor.visible = this.zoneVisible;
-      z.walls.visible = this.zoneVisible && z.uniforms.uSelected.value > 0.02;
+      z.uniforms.uSelected.value += (sel - z.uniforms.uSelected.value) * k;
+      const base = this.zoneVisible ? (this.selectedZone ? 0.12 : 0.42) : 0;
+      z.uniforms.uIntensity.value += (base - z.uniforms.uIntensity.value) * k;
+      const on = z.uniforms.uIntensity.value + z.uniforms.uSelected.value > 0.01;
+      z.floor.visible = on;
+      z.walls.visible = on;
+      z.gate.visible = on;
     }
   }
 
@@ -525,6 +653,7 @@ export class RaceScene {
     this.rig.dispose();
     this.labels.dispose();
     this.composer?.dispose();
+    this.envRT?.dispose();
     this.renderer.dispose();
     canvas.remove();
   }
