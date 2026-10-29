@@ -5,6 +5,16 @@ import { haptic } from '@/telegram/sdk';
 import { sfx } from '@/audio/sfx';
 import { IconFlag, IconHome, IconPulse, IconTrophy, IconUser, NavCar } from './icons';
 import { useSettings, prefersReducedMotion } from '@/store/settings';
+import { useWallet } from '@/store/wallet';
+
+// Screen enter transitions read the direction from <html data-nav-dir>. Zustand notifies
+// synchronously inside set(), so the attribute is in place before the next screen mounts.
+if (typeof document !== 'undefined') {
+  document.documentElement.dataset.navDir = '0';
+  useNav.subscribe((s, prev) => {
+    if (s.stack !== prev.stack || s.tab !== prev.tab) document.documentElement.dataset.navDir = String(s.dir);
+  });
+}
 
 const TABS: Array<{ id: TabId; icon: typeof IconHome; key: string }> = [
   { id: 'home', icon: IconHome, key: 'nav.home' },
@@ -18,11 +28,15 @@ const TABS: Array<{ id: TabId; icon: typeof IconHome; key: string }> = [
  * F1-style bottom navigation: a tiny race car drives along a dashed
  * "track" to the active tab with acceleration, braking and a light trail.
  */
-export function NavBar({ hidden, openCount }: { hidden?: boolean; openCount: number }) {
+export function NavBar({ hidden }: { hidden?: boolean; /** Accepted for compatibility; the badge counts the user's pending entries. */ openCount?: number }) {
   const tab = useNav((s) => s.tab);
+  const pending = useWallet((s) => s.entries.reduce((n, e) => n + (e.state === 'PENDING' ? 1 : 0), 0));
   const go = useNav((s) => s.go);
   const motion = useSettings((s) => s.motion);
   const reduced = prefersReducedMotion(motion);
+  useEffect(() => {
+    document.documentElement.classList.toggle('reduce-motion', reduced);
+  }, [reduced]);
   const trackRef = useRef<HTMLDivElement>(null);
   const carRef = useRef<HTMLDivElement>(null);
   const trailRef = useRef<HTMLDivElement>(null);
@@ -87,7 +101,7 @@ export function NavBar({ hidden, openCount }: { hidden?: boolean; openCount: num
   }, []);
 
   return (
-    <nav className={`nav ${hidden ? 'nav--hidden' : ''}`} aria-label={t('nav.label')}>
+    <nav className={`nav ${hidden ? 'nav--hidden' : ''} ${tab === 'live' ? 'nav--live' : ''}`} aria-label={t('nav.label')}>
       <div className="nav__track" ref={trackRef} aria-hidden="true">
         <div className="nav__asphalt" />
         <div className="nav__trail" ref={trailRef} />
@@ -108,6 +122,7 @@ export function NavBar({ hidden, openCount }: { hidden?: boolean; openCount: num
           return (
             <div className="nav__center" key={id}>
               <button className="nav__pulse" aria-label={t(key)} aria-current={active ? 'page' : undefined} onClick={onClick}>
+                <span className="nav__pulse-ring" aria-hidden="true" />
                 <Icon />
                 <span className="nav__pulse-label">LIVE</span>
               </button>
@@ -115,12 +130,22 @@ export function NavBar({ hidden, openCount }: { hidden?: boolean; openCount: num
           );
         }
         return (
-          <button key={id} className="nav__item" aria-current={active ? 'page' : undefined} onClick={onClick}>
-            <span style={{ position: 'relative' }}>
+          <button
+            key={id}
+            className="nav__item"
+            aria-current={active ? 'page' : undefined}
+            aria-label={id === 'pools' && pending > 0 ? `${t(key)} (${pending})` : undefined}
+            onClick={onClick}
+          >
+            <span className="nav__icon">
               <Icon />
-              {id === 'pools' && openCount > 0 && <span className="nav__badge num">{openCount}</span>}
+              {id === 'pools' && pending > 0 && (
+                <span className="nav__badge num" key={pending}>
+                  {pending > 99 ? '99+' : pending}
+                </span>
+              )}
             </span>
-            <span>{t(key)}</span>
+            <span className="nav__label">{t(key)}</span>
           </button>
         );
       })}
