@@ -2,7 +2,7 @@ import { useWallet } from '@/store/wallet';
 import { useNav } from '@/store/nav';
 import { t, fmtNumber } from '@/i18n/core';
 import { telegramUser, haptic } from '@/telegram/sdk';
-import { LogoPulse } from '@/ui/icons';
+import { IconCoin, IconPlus, LogoPulse } from '@/ui/icons';
 import { DriverAvatar } from '@/ui/kit';
 import { useSettings } from '@/store/settings';
 
@@ -27,14 +27,22 @@ export function Header({ right }: { right?: React.ReactNode }) {
       {right}
       <button
         className="balance-chip"
-        aria-label={`${t('ui.balance')}: ${balance} PULSE DEMO`}
+        aria-label={`${t('shell.demoBalance')}: ${fmtNumber(balance)}`}
         onClick={() => {
           haptic.tap();
           push({ name: 'wallet' });
         }}
       >
-        <span className="balance-chip__mode">DEMO</span>
-        <span>{fmtNumber(balance)}</span>
+        <span className="balance-chip__mode" aria-hidden="true">
+          {t('app.demo')}
+        </span>
+        <IconCoin size={16} className="icon balance-chip__coin" />
+        <span className="balance-chip__val num" key={balance}>
+          {fmtNumber(balance)}
+        </span>
+        <span className="balance-chip__plus" aria-hidden="true">
+          <IconPlus size={13} />
+        </span>
       </button>
       <button
         className="avatar-btn"
@@ -53,7 +61,7 @@ export function Header({ right }: { right?: React.ReactNode }) {
 
 export function SubHeader({ title, onBack, right }: { title?: React.ReactNode; onBack: () => void; right?: React.ReactNode }) {
   return (
-    <header className="topbar" style={{ minHeight: 46 }}>
+    <header className="topbar topbar--sub">
       <button
         className="icon-btn"
         aria-label={t('ui.back')}
@@ -66,7 +74,7 @@ export function SubHeader({ title, onBack, right }: { title?: React.ReactNode; o
           <path d="m15 5-7 7 7 7" />
         </svg>
       </button>
-      {title && <div style={{ fontWeight: 700, fontSize: 16, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>}
+      {title && <div className="topbar__title">{title}</div>}
       {!title && <div className="topbar__spacer" />}
       {right}
     </header>
