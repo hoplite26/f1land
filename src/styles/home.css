@@ -671,12 +671,11 @@
 .home .channel__map {
   height: 88px;
   margin: 4px 0 6px;
-  display: grid;
-  place-items: center;
 }
 .home .channel__svg {
+  display: block;
   width: 100%;
-  height: 100%;
+  height: 88px;
   overflow: visible;
   filter: drop-shadow(0 0 4px rgba(47, 230, 255, 0.7));
 }

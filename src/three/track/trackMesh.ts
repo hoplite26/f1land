@@ -450,8 +450,8 @@ export function buildTrackMeshes(circuit: CircuitData, model: TrackModel, qualit
     floor.renderOrder = 5;
     const wmat = zoneMaterial('wall', uniforms);
     const wgeo = mergeGeometries([
-      wall(geom, sec.startS, sec.endS, hw + 1.3, 0, 4.2, 6, 30),
-      wall(geom, sec.startS, sec.endS, -hw - 1.3, 0, 4.2, 6, 30),
+      wall(geom, sec.startS, sec.endS, hw + 1.3, 0, 3.4, 6, 30),
+      wall(geom, sec.startS, sec.endS, -hw - 1.3, 0, 3.4, 6, 30),
     ])!;
     const walls = new THREE.Mesh(wgeo, wmat);
     walls.renderOrder = 6;

@@ -61,7 +61,7 @@ export class MotionTrail {
       side: THREE.DoubleSide,
       uniforms: { uColor: { value: new THREE.Color(color) } },
       vertexShader: 'attribute float alpha; varying float vA; void main(){ vA = alpha; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: 'uniform vec3 uColor; varying float vA; void main(){ float a = vA * vA * 0.85; gl_FragColor = vec4(uColor * a, a); }',
+      fragmentShader: 'uniform vec3 uColor; varying float vA; void main(){ float a = vA * vA * 0.5; gl_FragColor = vec4(uColor * a, a); }',
     });
     this.mesh = new THREE.Mesh(this.geo, mat);
     this.mesh.frustumCulled = false;
@@ -94,7 +94,7 @@ export class MotionTrail {
       tmp.subVectors(a, b);
       if (tmp.lengthSq() < 1e-6) tmp.set(0, 0, 1);
       tmp.normalize();
-      const w = 0.32 * (1 - i / this.n) + 0.05;
+      const w = 0.2 * (1 - i / this.n) + 0.04;
       p.setXYZ(i * 2, a.x - tmp.z * w, 0.12, a.z + tmp.x * w);
       p.setXYZ(i * 2 + 1, a.x + tmp.z * w, 0.12, a.z - tmp.x * w);
     }
@@ -259,7 +259,7 @@ export class Beacon {
       return;
     }
     const d = camPos.distanceTo(pos);
-    const target = THREE.MathUtils.smoothstep(d, 45, 140) * 0.55;
+    const target = THREE.MathUtils.smoothstep(d, 50, 160) * 0.42;
     this.uniforms.uAlpha.value += (target - this.uniforms.uAlpha.value) * Math.min(1, dt * 5);
     if (!reduced) this.uniforms.uTime.value += dt;
     this.mesh.visible = this.uniforms.uAlpha.value > 0.01;
