@@ -1,0 +1,284 @@
+/* 3D scene overlays: car labels, sector tags, camera tag, broadcast FX. Owned by the scene layer. */
+
+.scene-host .label-layer {
+  z-index: 2;
+  contain: strict;
+}
+
+/* Cinematic vignette over the canvas (cheap, no post-processing). */
+.scene-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 85% at 50% 45%, transparent 55%, rgba(3, 6, 8, 0.55) 100%),
+    linear-gradient(180deg, rgba(4, 7, 9, 0.5) 0%, transparent 16%, transparent 72%, rgba(4, 7, 9, 0.55) 100%);
+}
+.scene-host--top .scene-vignette {
+  background: radial-gradient(120% 90% at 50% 50%, transparent 60%, rgba(3, 6, 8, 0.5) 100%);
+}
+
+/* ---------------- car labels ---------------- */
+
+.car-label {
+  --team: #fff;
+  --accent: rgba(255, 255, 255, 0.16);
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: stretch;
+  height: 20px;
+  border-radius: 6px;
+  background: rgba(8, 12, 15, 0.82);
+  box-shadow: 0 0 0 1px var(--accent), 0 4px 14px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: #f1f5f7;
+  font: 600 11px/20px var(--font-num, 'Chakra Petch', monospace);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  translate: -50% calc(-100% - var(--stem, 14px));
+  will-change: transform;
+  pointer-events: none;
+}
+.car-label::after {
+  /* stem down to the car */
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1.5px;
+  height: var(--stem, 14px);
+  translate: -50% 0;
+  background: linear-gradient(180deg, var(--team), transparent);
+  opacity: 0.85;
+}
+.car-label::before {
+  /* contact dot */
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: calc(100% + var(--stem, 14px) - 2px);
+  width: 5px;
+  height: 5px;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: var(--team);
+  box-shadow: 0 0 6px var(--team);
+}
+.car-label__pos {
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 6px 0 0 6px;
+  background: rgba(255, 255, 255, 0.1);
+  text-align: center;
+  font-weight: 700;
+}
+.car-label__pos:empty {
+  display: none;
+}
+.car-label__bar {
+  width: 3px;
+  margin: 4px 0 4px 5px;
+  border-radius: 2px;
+  background: var(--team);
+  box-shadow: 0 0 6px var(--team);
+}
+.car-label__code {
+  padding: 0 7px 0 5px;
+}
+
+.car-label[data-kind='near'] {
+  opacity: 0.82;
+  scale: 0.92;
+}
+.car-label[data-kind='follow'] {
+  --accent: #c6ff3d;
+  height: 24px;
+  font-size: 12.5px;
+  line-height: 24px;
+  box-shadow: 0 0 0 1.5px #c6ff3d, 0 0 16px rgba(198, 255, 61, 0.45), 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+.car-label[data-kind='follow'] .car-label__pos {
+  background: #c6ff3d;
+  color: #0a0f05;
+}
+.car-label[data-kind='rival'] {
+  --accent: #2fe6ff;
+  box-shadow: 0 0 0 1.5px #2fe6ff, 0 0 14px rgba(47, 230, 255, 0.4), 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+.car-label[data-kind='rival'] .car-label__pos {
+  background: #2fe6ff;
+  color: #04161a;
+}
+.car-label--sc {
+  --team: #ffb21f;
+  background: linear-gradient(90deg, #ffb21f, #ffd84a);
+  color: #1a1200;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  box-shadow: 0 0 0 1px rgba(255, 210, 60, 0.9), 0 0 18px rgba(255, 178, 31, 0.6);
+  animation: scene-sc-blink 0.9s steps(2, jump-none) infinite;
+}
+.car-label--sc .car-label__code {
+  padding: 0 8px;
+}
+
+@keyframes scene-sc-blink {
+  50% {
+    box-shadow: 0 0 0 1px rgba(255, 210, 60, 0.4), 0 0 4px rgba(255, 178, 31, 0.2);
+    filter: brightness(0.82);
+  }
+}
+
+/* ---------------- sector zone tags ---------------- */
+
+.zone-tag {
+  --zc: #2fe6ff;
+  position: absolute;
+  left: 0;
+  top: 0;
+  translate: -50% -100%;
+  pointer-events: none;
+  will-change: transform;
+  transition: opacity 0.3s var(--ease-out, ease), scale 0.3s var(--ease-out, ease);
+}
+.zone-tag[data-zone='2'] {
+  --zc: #c6ff3d;
+}
+.zone-tag[data-zone='3'] {
+  --zc: #b26bff;
+}
+.zone-tag__s {
+  display: block;
+  padding: 2px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--zc);
+  background: rgba(6, 10, 13, 0.78);
+  color: var(--zc);
+  font: 700 11px/16px var(--font-num, 'Chakra Petch', monospace);
+  letter-spacing: 0.08em;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--zc) 45%, transparent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--zc) 70%, transparent);
+}
+.zone-tag[data-selected='true'] {
+  scale: 1.25;
+  z-index: 1;
+}
+.zone-tag[data-selected='true'] .zone-tag__s {
+  background: var(--zc);
+  color: #061014;
+  text-shadow: none;
+  animation: scene-zone-pulse 1.6s ease-in-out infinite;
+}
+.zone-tag[data-selected='dim'] {
+  opacity: 0.4;
+}
+
+@keyframes scene-zone-pulse {
+  50% {
+    box-shadow: 0 0 22px color-mix(in srgb, var(--zc) 80%, transparent), 0 0 0 4px color-mix(in srgb, var(--zc) 25%, transparent);
+  }
+}
+
+/* ---------------- broadcast camera tag ---------------- */
+
+.cam-tag {
+  position: absolute;
+  left: 14px;
+  top: calc(var(--safe-top, 0px) + 78px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  background: rgba(6, 10, 13, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  color: rgba(241, 245, 247, 0.85);
+  font: 600 9.5px/14px var(--font-num, 'Chakra Petch', monospace);
+  letter-spacing: 0.16em;
+  pointer-events: none;
+}
+.cam-tag__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff3b47;
+  box-shadow: 0 0 6px #ff3b47;
+  animation: scene-rec 1.4s ease-in-out infinite;
+}
+.cam-tag__name:empty {
+  display: none;
+}
+.cam-tag--cut {
+  animation: scene-cut 0.6s var(--ease-out, ease) both;
+}
+.scene-host--top .cam-tag {
+  display: none;
+}
+
+@keyframes scene-rec {
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes scene-cut {
+  from {
+    opacity: 0;
+    translate: -8px 0;
+  }
+}
+
+/* ---------------- moment flashes (overtake / finish) ---------------- */
+
+.scene-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+}
+.scene-fx[data-fx='overtake'] {
+  background: radial-gradient(90% 60% at 50% 55%, transparent 40%, rgba(198, 255, 61, 0.22) 100%);
+  animation: scene-flash 1.1s var(--ease-out, ease) both;
+}
+.scene-fx[data-fx='fastest'] {
+  background: radial-gradient(90% 60% at 50% 55%, transparent 40%, rgba(178, 107, 255, 0.26) 100%);
+  animation: scene-flash 1.2s var(--ease-out, ease) both;
+}
+.scene-fx[data-fx='sc'] {
+  background: radial-gradient(100% 70% at 50% 50%, transparent 45%, rgba(255, 190, 30, 0.22) 100%);
+  animation: scene-flash 1.6s ease-in-out 2 both;
+}
+.scene-fx[data-fx='finish'] {
+  background:
+    repeating-conic-gradient(rgba(255, 255, 255, 0.07) 0 25%, transparent 0 50%) 0 0 / 28px 28px,
+    radial-gradient(100% 70% at 50% 50%, transparent 40%, rgba(255, 255, 255, 0.18) 100%);
+  animation: scene-flash 2.4s var(--ease-out, ease) both;
+}
+
+@keyframes scene-flash {
+  0% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .car-label--sc,
+  .cam-tag__dot,
+  .zone-tag[data-selected='true'] .zone-tag__s {
+    animation: none;
+  }
+  .scene-fx {
+    display: none;
+  }
+}
