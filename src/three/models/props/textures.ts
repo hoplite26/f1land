@@ -878,10 +878,10 @@ export function getGroundTexture(theme: EnvironmentTheme): THREE.Texture {
           break;
         }
         case 'desert': {
-          ctx.fillStyle = '#d6b483';
+          ctx.fillStyle = '#cfb791';
           ctx.fillRect(0, 0, w, h);
-          blotches(16, ['rgba(190,150,100,0.9)', 'rgba(235,205,160,0.9)'], [60, 150], 0.35);
-          ctx.strokeStyle = 'rgba(160,120,75,0.18)';
+          blotches(16, ['rgba(190,155,110,0.9)', 'rgba(235,210,170,0.9)'], [60, 150], 0.12);
+          ctx.strokeStyle = 'rgba(160,125,85,0.07)';
           ctx.lineWidth = 3;
           for (let y = 0; y < h + 40; y += 26) {
             ctx.beginPath();
@@ -898,7 +898,7 @@ export function getGroundTexture(theme: EnvironmentTheme): THREE.Texture {
         case 'dunes': {
           ctx.fillStyle = '#e2cf9e';
           ctx.fillRect(0, 0, w, h);
-          blotches(12, ['rgba(200,180,130,0.9)', 'rgba(245,232,200,0.9)'], [60, 140], 0.35);
+          blotches(12, ['rgba(200,180,130,0.9)', 'rgba(245,232,200,0.9)'], [60, 140], 0.14);
           speckle(5000, ['#c8b07a', '#f5e9c8'], [1, 2], [0.2, 0.5]);
           // Marram grass tufts
           for (let i = 0; i < 90; i++) {
