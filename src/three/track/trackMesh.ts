@@ -123,6 +123,9 @@ export function wall(geom: TrackGeometry, s0: number, s1: number, lat: LatFn, y0
   return g;
 }
 
+/** Half width of the pit lane ribbon (working + fast lane ≈ 12 m, matches the pit complex frame). */
+export const PIT_HALF_WIDTH = 6;
+
 function isStreet(c: CircuitData): boolean {
   return c.theme === 'street';
 }
@@ -143,58 +146,88 @@ export interface TrackMeshes {
 export interface ZoneOverlay {
   floor: THREE.Mesh;
   walls: THREE.Mesh;
+  /** Glowing gate across the track at the sector start. */
+  gate: THREE.Mesh;
   uniforms: { uColor: { value: THREE.Color }; uTime: { value: number }; uIntensity: { value: number }; uSelected: { value: number } };
   sector: 1 | 2 | 3;
 }
 
-const ZONE_COLORS = ['#c6ff3d', '#2fe6ff', '#b26bff'];
+/** Sector colours (mockups): S1 cyan, S2 lime, S3 violet. */
+export const ZONE_COLORS = ['#2fe6ff', '#c6ff3d', '#b26bff'];
 
-function zoneMaterial(color: string, wallMode: boolean): { mat: THREE.ShaderMaterial; uniforms: ZoneOverlay['uniforms'] } {
-  const uniforms = {
-    uColor: { value: new THREE.Color(color) },
-    uTime: { value: 0 },
-    uIntensity: { value: 0.18 },
-    uSelected: { value: 0 },
-  };
-  const mat = new THREE.ShaderMaterial({
+const ZONE_VERT = /* glsl */ `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }`;
+const ZONE_HEAD = /* glsl */ `
+  uniform vec3 uColor; uniform float uTime; uniform float uIntensity; uniform float uSelected;
+  varying vec2 vUv;`;
+const ZONE_FRAG = {
+  // Floor: neon edge lines, soft fill, flowing chevrons in the race direction when selected.
+  floor: /* glsl */ `${ZONE_HEAD}
+  void main() {
+    float e = abs(vUv.y - 0.5) * 2.0;
+    float edge = smoothstep(0.84, 0.93, e) * (1.0 - smoothstep(0.975, 1.0, e));
+    float fill = 0.1 + 0.22 * smoothstep(0.25, 1.0, e);
+    float flow = fract(vUv.x * 0.55 - abs(vUv.y - 0.5) * 0.45 - uTime * (0.45 + uSelected * 0.6));
+    float chevron = smoothstep(0.0, 0.04, flow) * (1.0 - smoothstep(0.07, 0.2, flow)) * (1.0 - smoothstep(0.7, 0.9, e));
+    float pulse = 0.78 + 0.22 * sin(uTime * 3.2);
+    float a = uIntensity * (fill + edge * 1.1) + uSelected * (fill * 1.4 + edge * 2.4 * pulse + chevron * 0.6);
+    a = clamp(a, 0.0, 1.0);
+    gl_FragColor = vec4(uColor * a, a);
+  }`,
+  // Curtains: vertical gradient, scanning bands, ribs and a pulsing top edge.
+  wall: /* glsl */ `${ZONE_HEAD}
+  void main() {
+    float fade = pow(1.0 - vUv.y, 1.7);
+    float top = smoothstep(0.88, 0.96, vUv.y) * (1.0 - smoothstep(0.96, 1.0, vUv.y));
+    float bands = 0.55 + 0.45 * sin(vUv.x * 3.7 - uTime * 2.6);
+    float ribs = smoothstep(0.9, 1.0, fract(vUv.x * 2.0)) * 0.5;
+    float pulse = 0.75 + 0.25 * sin(uTime * 4.0);
+    float k = uIntensity * 1.2 + uSelected * 1.1;
+    float a = (fade * bands * 0.5 + ribs * fade + top * pulse * 0.9) * k;
+    a = clamp(a, 0.0, 1.0);
+    gl_FragColor = vec4(uColor * a, a);
+  }`,
+  // Gate: bright frame + faint gradient fill.
+  gate: /* glsl */ `${ZONE_HEAD}
+  void main() {
+    vec2 d = min(vUv, 1.0 - vUv);
+    float frame = 1.0 - smoothstep(0.0, 0.035, min(d.x * 0.35, d.y));
+    float fill = 0.12 * (1.0 - vUv.y);
+    float scan = smoothstep(0.0, 0.02, abs(fract(vUv.y - uTime * 0.35) - 0.5) - 0.47);
+    float a = (frame * 0.95 + fill + scan * 0.25) * (uIntensity * 1.3 + uSelected * 1.2);
+    a = clamp(a, 0.0, 1.0);
+    gl_FragColor = vec4(uColor * a, a);
+  }`,
+};
+
+function zoneMaterial(kind: keyof typeof ZONE_FRAG, uniforms: ZoneOverlay['uniforms']): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
     uniforms,
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
-    polygonOffset: true,
+    polygonOffset: kind === 'floor',
     polygonOffsetFactor: -4,
     polygonOffsetUnits: -4,
-    vertexShader: /* glsl */ `
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }`,
-    fragmentShader: wallMode
-      ? /* glsl */ `
-      uniform vec3 uColor; uniform float uTime; uniform float uIntensity; uniform float uSelected;
-      varying vec2 vUv;
-      void main() {
-        float fade = pow(1.0 - vUv.y, 2.2);
-        float scan = 0.65 + 0.35 * sin(vUv.x * 2.0 - uTime * 3.0);
-        float a = fade * scan * uSelected * 0.75;
-        gl_FragColor = vec4(uColor * a, a);
-      }`
-      : /* glsl */ `
-      uniform vec3 uColor; uniform float uTime; uniform float uIntensity; uniform float uSelected;
-      varying vec2 vUv;
-      void main() {
-        float edge = smoothstep(0.42, 0.5, abs(vUv.y - 0.5));
-        float flow = fract(vUv.x * 0.6 - uTime * (0.6 + uSelected * 0.9));
-        float chevron = smoothstep(0.0, 0.08, flow) * (1.0 - smoothstep(0.12, 0.3, flow));
-        float base = uIntensity * (0.35 + edge * 1.4);
-        float sel = uSelected * (0.22 + chevron * 0.55 + edge * 1.3);
-        float a = clamp(base + sel, 0.0, 1.0);
-        gl_FragColor = vec4(uColor * a, a);
-      }`,
+    vertexShader: ZONE_VERT,
+    fragmentShader: ZONE_FRAG[kind],
   });
-  return { mat, uniforms };
+}
+
+/** Vertical quad across the track at arc length s (for sector gates). */
+function gateGeometry(geom: TrackGeometry, s: number, half: number, h: number): THREE.BufferGeometry {
+  const a = geom.pointAt(s, -half);
+  const b = geom.pointAt(s, half);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([a[0], 0, -a[1], b[0], 0, -b[1], a[0], h, -a[1], b[0], h, -b[1]]), 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), 2));
+  g.setIndex([0, 1, 2, 1, 3, 2]);
+  return g;
 }
 
 export function buildTrackMeshes(circuit: CircuitData, model: TrackModel, quality: ModelQuality): TrackMeshes {
@@ -367,7 +400,7 @@ export function buildTrackMeshes(circuit: CircuitData, model: TrackModel, qualit
   // --- Pit lane ---
   {
     const pit = model.pit;
-    const pw = 5.6;
+    const pw = PIT_HALF_WIDTH;
     const pitMat = new THREE.MeshStandardMaterial({ map: asphaltTexture(), color: 0xb9bdc2, roughness: 0.8 });
     const pg = ribbon({ geom: pit, s0: 0, s1: pit.length, latA: -pw, latB: pw, y: 0.004, step: 2, uScale: 14 });
     group.add(new THREE.Mesh(pg, pitMat));
@@ -398,38 +431,37 @@ export function buildTrackMeshes(circuit: CircuitData, model: TrackModel, qualit
     const boxMat = new THREE.MeshStandardMaterial({ color: 0x27323a, roughness: 0.7, emissive: 0x0b1215 });
     group.add(new THREE.Mesh(bg, boxMat));
     disposables.push(bg, boxMat);
-    // Pit wall between the pit lane and the track.
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0xd9dde0, roughness: 0.75 });
-    const wg = wall(pit, 40, pit.length - 40, -garageSide * (pw + 0.4), 0, 1.1, 3);
-    const wg2 = wall(pit, 40, pit.length - 40, -garageSide * (pw + 0.9), 0, 1.1, 3);
-    const wTop = ribbon({ geom: pit, s0: 40, s1: pit.length - 40, latA: -garageSide * (pw + 0.9), latB: -garageSide * (pw + 0.4), y: 1.1, step: 3, uScale: 6 });
-    const wAll = mergeGeometries([wg, wg2, wTop])!;
-    const pitWall = new THREE.Mesh(wAll, wallMat);
-    group.add(pitWall);
-    disposables.push(wAll, wallMat);
+    // The pit wall is built by the environment (merged with the pit complex).
   }
 
-  // --- Sector zone overlays (floor + volumetric corridor walls) ---
+  // --- Sector zone overlays (floor + volumetric curtains + start gate) ---
   const zones: ZoneOverlay[] = [];
   const sectorAnchors: THREE.Vector3[] = [];
   circuit.sectors.forEach((sec, i) => {
-    const { mat, uniforms } = zoneMaterial(ZONE_COLORS[i]!, false);
-    const fg = ribbon({ geom, s0: sec.startS, s1: sec.endS, latA: -hw - 0.6, latB: hw + 0.6, y: 0.03, step: 4, uScale: 24 });
-    const floor = new THREE.Mesh(fg, mat);
+    const uniforms = {
+      uColor: { value: new THREE.Color(ZONE_COLORS[i]!) },
+      uTime: { value: 0 },
+      uIntensity: { value: 0.5 },
+      uSelected: { value: 0 },
+    };
+    const fmat = zoneMaterial('floor', uniforms);
+    const fg = ribbon({ geom, s0: sec.startS, s1: sec.endS, latA: -hw - 1.1, latB: hw + 1.1, y: 0.03, step: 4, uScale: 24 });
+    const floor = new THREE.Mesh(fg, fmat);
     floor.renderOrder = 5;
-    const wm = zoneMaterial(ZONE_COLORS[i]!, true);
-    wm.uniforms.uTime = uniforms.uTime;
-    wm.uniforms.uSelected = uniforms.uSelected;
+    const wmat = zoneMaterial('wall', uniforms);
     const wgeo = mergeGeometries([
-      wall(geom, sec.startS, sec.endS, hw + 1.2, 0, 3.2, 6, 30),
-      wall(geom, sec.startS, sec.endS, -hw - 1.2, 0, 3.2, 6, 30),
+      wall(geom, sec.startS, sec.endS, hw + 1.3, 0, 3.4, 6, 30),
+      wall(geom, sec.startS, sec.endS, -hw - 1.3, 0, 3.4, 6, 30),
     ])!;
-    const walls = new THREE.Mesh(wgeo, wm.mat);
+    const walls = new THREE.Mesh(wgeo, wmat);
     walls.renderOrder = 6;
-    walls.visible = false;
-    group.add(floor, walls);
-    disposables.push(fg, mat, wgeo, wm.mat);
-    zones.push({ floor, walls, uniforms, sector: (i + 1) as 1 | 2 | 3 });
+    const gmat = zoneMaterial('gate', uniforms);
+    const ggeo = gateGeometry(geom, sec.startS + 0.5, hw + 1.3, 5.5);
+    const gate = new THREE.Mesh(ggeo, gmat);
+    gate.renderOrder = 6;
+    group.add(floor, walls, gate);
+    disposables.push(fg, fmat, wgeo, wmat, ggeo, gmat);
+    zones.push({ floor, walls, gate, uniforms, sector: (i + 1) as 1 | 2 | 3 });
     const mid = (sec.startS + (((sec.endS - sec.startS) % L) + L) % L / 2) % L;
     const p = geom.pointAt(mid);
     sectorAnchors.push(new THREE.Vector3(p[0], 6, -p[1]));
@@ -445,7 +477,7 @@ export function buildTrackMeshes(circuit: CircuitData, model: TrackModel, qualit
       geos.push(ribbon({ geom, s0: z.detectionS - 0.6, s1: z.detectionS + 0.6, latA: -hw, latB: hw, y: 0.014, step: 1, uScale: 1 }));
     }
     const sg = mergeGeometries(geos)!;
-    const sm = new THREE.MeshBasicMaterial({ color: 0x2fe6ff, transparent: true, opacity: 0.55, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const sm = new THREE.MeshBasicMaterial({ color: 0x7ff3ff, transparent: true, opacity: 0.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     straights = new THREE.Mesh(sg, sm);
     group.add(straights);
     disposables.push(sg, sm);

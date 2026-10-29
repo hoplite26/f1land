@@ -61,15 +61,18 @@ export class MotionTrail {
       side: THREE.DoubleSide,
       uniforms: { uColor: { value: new THREE.Color(color) } },
       vertexShader: 'attribute float alpha; varying float vA; void main(){ vA = alpha; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: 'uniform vec3 uColor; varying float vA; void main(){ float a = vA * vA * 0.85; gl_FragColor = vec4(uColor * a, a); }',
+      fragmentShader: 'uniform vec3 uColor; varying float vA; void main(){ float a = vA * vA * 0.5; gl_FragColor = vec4(uColor * a, a); }',
     });
     this.mesh = new THREE.Mesh(this.geo, mat);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 7;
   }
   reset(): void {
+    for (const v of this.pts) this.pool.push(v);
     this.pts = [];
   }
+  private pool: THREE.Vector3[] = [];
+  private tmp = new THREE.Vector3();
   update(dt: number, pos: THREE.Vector3 | null): void {
     if (!pos) {
       this.mesh.visible = false;
@@ -79,18 +82,19 @@ export class MotionTrail {
     this.acc += dt;
     if (this.acc > 0.06 || this.pts.length === 0) {
       this.acc = 0;
-      this.pts.unshift(pos.clone());
-      if (this.pts.length > this.n) this.pts.length = this.n;
+      // Recycle the oldest point instead of allocating.
+      const v = this.pts.length >= this.n ? this.pts.pop()! : this.pool.pop() ?? new THREE.Vector3();
+      this.pts.unshift(v.copy(pos));
     } else if (this.pts[0]) this.pts[0].copy(pos);
     const p = this.geo.getAttribute('position') as THREE.BufferAttribute;
-    const tmp = new THREE.Vector3();
+    const tmp = this.tmp;
     for (let i = 0; i < this.n; i++) {
       const a = this.pts[Math.min(i, this.pts.length - 1)] ?? pos;
       const b = this.pts[Math.min(i + 1, this.pts.length - 1)] ?? a;
       tmp.subVectors(a, b);
       if (tmp.lengthSq() < 1e-6) tmp.set(0, 0, 1);
       tmp.normalize();
-      const w = 0.22 * (1 - i / this.n) + 0.05;
+      const w = 0.2 * (1 - i / this.n) + 0.04;
       p.setXYZ(i * 2, a.x - tmp.z * w, 0.12, a.z + tmp.x * w);
       p.setXYZ(i * 2 + 1, a.x + tmp.z * w, 0.12, a.z - tmp.x * w);
     }
@@ -218,5 +222,54 @@ export class Shockwaves {
   dispose(): void {
     this.items.forEach((i) => (i.mesh.material as THREE.Material).dispose());
     this.geo.dispose();
+  }
+}
+
+/**
+ * Soft light pillar above a highlighted car: readable from heli / overview
+ * distances where the ground ring is only a few pixels. Fades in with distance.
+ */
+export class Beacon {
+  readonly mesh: THREE.Mesh;
+  private uniforms: { uColor: { value: THREE.Color }; uAlpha: { value: number }; uTime: { value: number } };
+  constructor(color: string, height = 26, radius = 1.1) {
+    this.uniforms = { uColor: { value: new THREE.Color(color) }, uAlpha: { value: 0 }, uTime: { value: 0 } };
+    const geo = new THREE.CylinderGeometry(radius * 0.35, radius, height, 16, 1, true).translate(0, height / 2, 0);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: this.uniforms,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: `uniform vec3 uColor; uniform float uAlpha; uniform float uTime; varying vec2 vUv;
+        void main(){
+          float a = pow(1.0 - vUv.y, 1.6) * uAlpha;
+          a *= 0.75 + 0.25 * sin(vUv.y * 18.0 - uTime * 4.0);
+          gl_FragColor = vec4(uColor * a, a);
+        }`,
+    });
+    this.mesh = new THREE.Mesh(geo, mat);
+    this.mesh.renderOrder = 9;
+    this.mesh.visible = false;
+  }
+  update(dt: number, pos: THREE.Vector3 | null, camPos: THREE.Vector3, reduced: boolean): void {
+    if (!pos) {
+      this.mesh.visible = false;
+      return;
+    }
+    const d = camPos.distanceTo(pos);
+    const target = THREE.MathUtils.smoothstep(d, 50, 160) * 0.42;
+    this.uniforms.uAlpha.value += (target - this.uniforms.uAlpha.value) * Math.min(1, dt * 5);
+    if (!reduced) this.uniforms.uTime.value += dt;
+    this.mesh.visible = this.uniforms.uAlpha.value > 0.01;
+    this.mesh.position.set(pos.x, 0.1, pos.z);
+    // Thicker with distance so it stays a few pixels wide.
+    const k = Math.max(1, d / 160);
+    this.mesh.scale.set(k, 1, k);
+  }
+  dispose(): void {
+    this.mesh.geometry.dispose();
+    (this.mesh.material as THREE.Material).dispose();
   }
 }
