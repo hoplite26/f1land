@@ -16,17 +16,21 @@ import { NavBar } from '@/ui/NavBar';
 import { registerDict, setLang } from '@/i18n/core';
 import { UI_DICTS } from '@/i18n/ui';
 import { F1_I18N } from '@/domain/markets/i18n';
+import { registerFeatureDicts } from '@/i18n/extra';
 import { initTelegram, setBackButton } from '@/telegram/sdk';
 import '@/styles/app.css';
 import '@/styles/restored.css';
 
 registerDict('ru', { ...UI_DICTS.ru, ...F1_I18N.ru });
 registerDict('en', { ...UI_DICTS.en, ...F1_I18N.en });
+registerFeatureDicts();
 setLang(useSettings.getState().lang);
 initTelegram();
 startSessionService();
 startLiveLoop();
 void useLive.getState().open(useLive.getState().channelId);
+// Dev-only handles for scripted screenshots and debugging.
+if (import.meta.env.DEV) Object.assign(window, { __nav: useNav, __live: useLive, __settings: useSettings });
 
 function App() {
   const tab = useNav((s) => s.tab);
