@@ -121,6 +121,7 @@ function Scene3D() {
     });
     sceneRef.current = scene;
     activeScene = scene;
+    if (import.meta.env.DEV) Object.assign(window, { __scene: scene });
     void scene.load(runner.circuit, runner.model, runner.manifest.participants, (p) => !disposed && setBuildProgress(p)).then(() => {
       if (disposed) return;
       setReady(true);
