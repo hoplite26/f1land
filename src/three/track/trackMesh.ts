@@ -123,6 +123,9 @@ export function wall(geom: TrackGeometry, s0: number, s1: number, lat: LatFn, y0
   return g;
 }
 
+/** Half width of the pit lane ribbon (working + fast lane ≈ 12 m, matches the pit complex frame). */
+export const PIT_HALF_WIDTH = 6;
+
 function isStreet(c: CircuitData): boolean {
   return c.theme === 'street';
 }
@@ -367,7 +370,7 @@ export function buildTrackMeshes(circuit: CircuitData, model: TrackModel, qualit
   // --- Pit lane ---
   {
     const pit = model.pit;
-    const pw = 5.6;
+    const pw = PIT_HALF_WIDTH;
     const pitMat = new THREE.MeshStandardMaterial({ map: asphaltTexture(), color: 0xb9bdc2, roughness: 0.8 });
     const pg = ribbon({ geom: pit, s0: 0, s1: pit.length, latA: -pw, latB: pw, y: 0.004, step: 2, uScale: 14 });
     group.add(new THREE.Mesh(pg, pitMat));
@@ -398,15 +401,7 @@ export function buildTrackMeshes(circuit: CircuitData, model: TrackModel, qualit
     const boxMat = new THREE.MeshStandardMaterial({ color: 0x27323a, roughness: 0.7, emissive: 0x0b1215 });
     group.add(new THREE.Mesh(bg, boxMat));
     disposables.push(bg, boxMat);
-    // Pit wall between the pit lane and the track.
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0xd9dde0, roughness: 0.75 });
-    const wg = wall(pit, 40, pit.length - 40, -garageSide * (pw + 0.4), 0, 1.1, 3);
-    const wg2 = wall(pit, 40, pit.length - 40, -garageSide * (pw + 0.9), 0, 1.1, 3);
-    const wTop = ribbon({ geom: pit, s0: 40, s1: pit.length - 40, latA: -garageSide * (pw + 0.9), latB: -garageSide * (pw + 0.4), y: 1.1, step: 3, uScale: 6 });
-    const wAll = mergeGeometries([wg, wg2, wTop])!;
-    const pitWall = new THREE.Mesh(wAll, wallMat);
-    group.add(pitWall);
-    disposables.push(wAll, wallMat);
+    // The pit wall is built by the environment (merged with the pit complex).
   }
 
   // --- Sector zone overlays (floor + volumetric corridor walls) ---
