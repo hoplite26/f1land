@@ -2,7 +2,7 @@ import { useWallet } from '@/store/wallet';
 import { useNav } from '@/store/nav';
 import { t, fmtNumber } from '@/i18n/core';
 import { telegramUser, haptic } from '@/telegram/sdk';
-import { LogoPulse } from '@/ui/icons';
+import { IconCoin, IconPlus, LogoPulse } from '@/ui/icons';
 import { DriverAvatar } from '@/ui/kit';
 import { useSettings } from '@/store/settings';
 
@@ -27,14 +27,22 @@ export function Header({ right }: { right?: React.ReactNode }) {
       {right}
       <button
         className="balance-chip"
-        aria-label={`${t('ui.balance')}: ${balance} PULSE DEMO`}
+        aria-label={`${t('shell.demoBalance')}: ${fmtNumber(balance)}`}
         onClick={() => {
           haptic.tap();
           push({ name: 'wallet' });
         }}
       >
-        <span className="balance-chip__mode">DEMO</span>
-        <span>{fmtNumber(balance)}</span>
+        <span className="balance-chip__mode" aria-hidden="true">
+          {t('app.demo')}
+        </span>
+        <IconCoin size={16} className="icon balance-chip__coin" />
+        <span className="balance-chip__val num" key={balance}>
+          {fmtNumber(balance)}
+        </span>
+        <span className="balance-chip__plus" aria-hidden="true">
+          <IconPlus size={13} />
+        </span>
       </button>
       <button
         className="avatar-btn"
