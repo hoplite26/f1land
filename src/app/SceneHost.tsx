@@ -9,6 +9,7 @@ import { useMapCars } from '@/app/hooks';
 import { t } from '@/i18n/core';
 import { sfx } from '@/audio/sfx';
 import { haptic } from '@/telegram/sdk';
+import '@/styles/scene.css';
 
 export type SceneLayout = 'hidden' | 'full' | 'top';
 
@@ -38,6 +39,15 @@ export const useSceneView = create<SceneViewState>((set) => ({
 }));
 
 let activeScene: RaceScene | null = null;
+/** WebGL context losses this session: each one steps the quality tier down before the automatic retry. */
+let contextLosses = 0;
+let retryTimer = 0;
+const QUALITY_STEPS = ['low', 'medium', 'high'] as const;
+
+function effectiveQuality(q: ReturnType<typeof resolveQuality>): ReturnType<typeof resolveQuality> {
+  const i = QUALITY_STEPS.indexOf(q);
+  return QUALITY_STEPS[Math.max(0, i - contextLosses)]!;
+}
 export function getScene(): RaceScene | null {
   return activeScene;
 }
@@ -107,11 +117,15 @@ function Scene3D() {
     if (!host.current || !labelsRef.current || !runner) return;
     let disposed = false;
     const scene = new RaceScene(host.current, {
-      quality: resolveQuality(quality),
+      quality: effectiveQuality(resolveQuality(quality)),
       reducedMotion: prefersReducedMotion(motion),
       labelLayer: labelsRef.current,
       onContextLost: () => {
+        contextLosses++;
         useSceneView.getState().set({ webglLost: true });
+        // Recover automatically (once or twice) on a lower tier; the 2D map covers the gap.
+        window.clearTimeout(retryTimer);
+        if (contextLosses <= 2) retryTimer = window.setTimeout(() => useSceneView.getState().set({ webglLost: false }), 2500);
       },
       onPick: (ids) => {
         haptic.tap();
@@ -121,6 +135,7 @@ function Scene3D() {
     });
     sceneRef.current = scene;
     activeScene = scene;
+    if (import.meta.env.DEV) Object.assign(window, { __scene: scene });
     void scene.load(runner.circuit, runner.model, runner.manifest.participants, (p) => !disposed && setBuildProgress(p)).then(() => {
       if (disposed) return;
       setReady(true);
@@ -190,12 +205,14 @@ function Scene3D() {
       if (live.cars[idx + 1]) ids.add(live.cars[idx + 1]!.id);
     }
     s.setLabelIds([...ids]);
-    (s as unknown as { labels: { setPositions(m: Map<string, number>): void } }).labels?.setPositions(new Map(live.cars.map((c) => [c.id, c.position])));
+    s.setPositions(new Map(live.cars.map((c) => [c.id, c.position])));
+    s.setSectorFlags(live.sectorFlags);
   }, [live, followId, rivalId, view.labels]);
 
   return (
     <>
       <div ref={host} className="scene-canvas-wrap" />
+      <div className="scene-vignette" />
       <div ref={labelsRef} className="label-layer" />
       {!ready && (
         <div className="scene-loading">
