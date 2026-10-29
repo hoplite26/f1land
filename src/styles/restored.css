@@ -1,7 +1,15 @@
 /* Layout for the persistent race scene and its screen overlays. */
+:root {
+  /* Height of the 3D section on pool screens (scene host 'top' layout). */
+  --pl-scene-h: clamp(210px, 33vh, 290px);
+}
 .scene-host { position: absolute; z-index: 0; inset: 0; overflow: hidden; background: #070b0d; }
 .scene-host--hidden { display: none; }
-.scene-host--top { top: calc(var(--safe-top) + 58px); height: 220px; bottom: auto; }
+/* Live: the viewport ends just under the peek sheet (Live sets --lv-scene-cut) so the camera centre stays visible. */
+.scene-host--full { bottom: calc(var(--nav-h) + var(--safe-bottom) + 8px + var(--lv-scene-cut, 0px)); }
+/* Pool: sits under the pool header; Pool.tsx translates it with the page scroll. */
+.scene-host--top { top: calc(var(--safe-top) + 58px); height: var(--pl-scene-h); bottom: auto; will-change: transform; }
+.scene-host--top::after { content: ''; position: absolute; inset: auto 0 0; height: 64px; pointer-events: none; background: linear-gradient(180deg, transparent, rgba(7, 9, 11, 0.92)); }
 .scene-canvas-wrap, .scene-canvas, .scene-2d, .label-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
 .scene-canvas { display: block; }
 .scene-2d { display: grid; place-items: center; background: radial-gradient(circle at center, #172628, #080d0f 75%); }
@@ -12,44 +20,16 @@
 .screen { pointer-events: auto; }
 .screen--flush { pointer-events: none; }
 .live { position: absolute; inset: 0; pointer-events: none; }
-.live button, .live [role='button'], .live [role='dialog'], .live input, .live__dock, .live__notice { pointer-events: auto; }
-.live__top { position: absolute; z-index: 5; top: calc(var(--safe-top) + 10px); left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.live__session, .live__status { display: flex; align-items: center; gap: 7px; border: 1px solid var(--stroke-2); border-radius: 12px; padding: 7px 10px; background: rgba(8, 13, 15, .88); }
-.live__session { max-width: 62%; }
-.live__status { white-space: nowrap; }
-.live__lap { font-size: 12px; }
-.live__flags, .live__notice { position: absolute; top: calc(var(--safe-top) + 56px); left: 12px; right: 12px; z-index: 8; }
-.live__notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; background: #24200f; border-radius: 12px; }
-.live__rail { position: absolute; z-index: 4; right: 12px; top: calc(var(--safe-top) + 76px); display: grid; gap: 8px; }
-.live__rail .icon-btn { background: rgba(8, 13, 15, .9); }
-.cam-menu { position: absolute; z-index: 10; right: 62px; top: calc(var(--safe-top) + 76px); display: grid; min-width: 150px; padding: 6px; border: 1px solid var(--stroke-2); border-radius: 12px; background: #10181c; pointer-events: auto; }
-.cam-menu__item { text-align: left; padding: 8px 10px; border-radius: 8px; }
-.cam-menu__item--on { color: var(--lime); background: rgba(198,255,61,.1); }
-.live__loading { position: absolute; inset: 0; z-index: 3; display: grid; place-content: center; justify-items: center; background: rgba(7, 9, 11, .76); }
+.live button, .live [role='button'], .live [role='dialog'], .live input, .live .sheet-backdrop { pointer-events: auto; }
+
+/* Shared helpers still used by other screens (MyPools entry detail, loaders). */
 .progress { width: 160px; height: 4px; margin-top: 10px; border-radius: 4px; background: var(--stroke-2); overflow: hidden; }
 .progress span { display: block; height: 100%; background: var(--lime); }
-.tower { position: absolute; top: calc(var(--safe-top) + 76px); left: 12px; z-index: 4; width: 145px; overflow: hidden; border-radius: 10px; background: rgba(7, 11, 13, .88); }
-.tower__row { display: flex; align-items: center; gap: 5px; width: 100%; height: 25px; padding: 2px 6px; text-align: left; font-size: 11px; border-bottom: 1px solid var(--stroke); }
-.tower__row--on { color: var(--lime); background: rgba(198,255,61,.12); }
-.tower__row--cut { border-top: 1px solid var(--red); }
-.tower__pos { width: 15px; }.tower__code { font-weight: 700; }.tower__gap { margin-left: auto; }.tower__more { display: block; width: 100%; height: 22px; }
-.live__dock { position: absolute; z-index: 5; bottom: calc(var(--nav-h) + var(--safe-bottom) + 15px); left: 10px; right: 10px; display: flex; flex-direction: column; gap: 8px; max-height: 45%; }
-.live__dock--open { max-height: 70%; height: 70%; }
-.follow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: rgba(12,18,20,.94); }
-.follow__pos { color: var(--lime); font-weight: 700; }.follow__stats { display: flex; align-items: center; gap: 8px; }
-.dock { display: flex; flex-direction: column; min-height: 0; background: rgba(12,18,20,.97); overflow: hidden; }
-.live__dock--open .dock { flex: 1; }
-.dock__grab { display: grid; place-items: center; width: 100%; min-height: 18px; }.dock__grab span { width: 38px; height: 4px; border-radius: 4px; background: var(--muted); }
-.dock__tabs { padding: 0 8px 8px; overflow-x: auto; }.dock__tabs .segmented { min-width: max-content; }
-.dock__body { min-height: 0; overflow: auto; padding: 0 8px 8px; }
-.hscroll--pools { display: flex; gap: 8px; overflow-x: auto; }.hscroll--pools .pool-card { flex: 0 0 min(280px, 82vw); }
-.pool-card { position: relative; padding: 10px; cursor: pointer; }.pool-card__title { font-weight: 700; }.pool-card__q { color: var(--text-2); font-size: 12px; }.pool-card__timer { font-size: 12px; white-space: nowrap; }.pool-card__outs { display: flex; gap: 5px; margin-top: 8px; }.pool-card__out { display: flex; gap: 5px; min-width: 0; padding: 4px 6px; border-radius: 7px; background: var(--panel-2); font-size: 11px; }.pool-card__mine { margin-top: 6px; }
-.timing__head, .timing__row { display: grid; grid-template-columns: 24px minmax(68px,1fr) 75px 75px 28px; align-items: center; gap: 4px; width: 100%; padding: 7px 4px; text-align: left; font-size: 12px; border-bottom: 1px solid var(--stroke); }.timing__head { color: var(--muted); font-size: 10px; }.timing__row--on { color: var(--lime); background: rgba(198,255,61,.08); }.timing__row--out { opacity: .55; }
-.feed__row { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--stroke); }.feed__icon { font-size: 19px; }.feed__text { font-weight: 600; }
-.moments { position: absolute; top: calc(var(--safe-top) + 65px); left: 50%; z-index: 6; transform: translateX(-50%); display: grid; gap: 6px; width: min(300px, 65%); }.moment { padding: 8px; border-radius: 9px; background: rgba(7,11,13,.9); font-size: 12px; }.moment__icon { margin-right: 6px; }.moment__tag { color: var(--lime); margin-left: 5px; }
-.replay { position: absolute; z-index: 6; left: 12px; right: 12px; bottom: 47%; display: flex; align-items: center; justify-content: space-between; padding: 6px; pointer-events: auto; }
-.start-lights { position: absolute; z-index: 6; left: 50%; top: 20%; transform: translateX(-50%); display: flex; gap: 5px; padding: 8px; background: #101010; border-radius: 8px; }.start-lights__col { display: grid; gap: 4px; }.start-lights__col span { width: 12px; height: 12px; border-radius: 50%; background: #3b1212; }.start-lights__col .on { background: #ff2635; }.splash { position: absolute; z-index: 7; top: 35%; width: 100%; text-align: center; font-size: 32px; font-weight: 700; color: var(--lime); }
-.pool-screen__scene { height: 220px; margin: 0 -14px 10px; position: relative; pointer-events: none; }.pool-screen__scene-tags { position: absolute; top: 10px; left: 14px; display: flex; gap: 6px; }.pool-q__title { margin: 0; font-size: 19px; }.pool-q__anchor, .pool-q__window { color: var(--text-2); font-size: 12px; margin-top: 6px; }.pool-q__meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }.pool-q__window { display: flex; align-items: center; gap: 5px; }.ticket { margin-top: 12px; }.pool-cta { margin: 12px 0; }.rules__text { color: var(--text-2); }.rules__dl { display: grid; grid-template-columns: minmax(90px, .7fr) 1.3fr; gap: 7px 12px; font-size: 12px; }.rules__dl dt { color: var(--muted); }.rules__dl dd { margin: 0; overflow-wrap: anywhere; }
-.duel { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin-top: 10px; }.duel__card { padding: 10px; }.duel__gap { font-weight: 700; }.duel__num, .duel__pos { color: var(--lime); }.duel__team, .duel__tag { color: var(--muted); font-size: 11px; }.duel__last { font-weight: 700; }
-.zones, .driver-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; margin-top: 10px; }.zone-card, .driver-pick { padding: 9px; border: 1px solid var(--stroke-2); border-radius: 10px; background: var(--panel); }.zone-card--on, .driver-pick--on { border-color: var(--lime); }.zone-card__odds { color: var(--lime); }.quali-list { display: grid; gap: 4px; }.quali-row { display: flex; align-items: center; gap: 8px; padding: 5px; }.quali-row--on { color: var(--lime); }.pit { margin-top: 10px; }.pit__flow { display: flex; align-items: center; justify-content: space-between; gap: 4px; }.pit__step { color: var(--muted); }.pit__step--on { color: var(--lime); }.pit__line { flex: 1; height: 2px; background: var(--stroke-2); }.pit__line--on { background: var(--lime); }
-@media (max-height: 640px) { .tower__row { height: 21px; }.live__dock { max-height: 40%; }.live__dock--open { max-height: 65%; height: 65%; } }
+.pool-q__title { margin: 0; font-size: 19px; line-height: 1.25; }
+.pool-q__anchor, .pool-q__window { color: var(--text-2); font-size: 12px; margin-top: 6px; }
+.pool-q__meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.pool-q__window { display: flex; align-items: center; gap: 5px; }
+.rules__text { color: var(--text-2); line-height: 1.45; }
+.rules__dl { display: grid; grid-template-columns: minmax(90px, 0.7fr) 1.3fr; gap: 7px 12px; margin: 0; font-size: 12px; }
+.rules__dl dt { color: var(--muted); }
+.rules__dl dd { margin: 0; overflow-wrap: anywhere; }
