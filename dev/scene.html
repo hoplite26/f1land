@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Pulse Arena — race scene harness</title>
+    <style>
+      :root { --safe-top: 0px; --font-num: 'Chakra Petch', monospace; }
+      html, body { margin: 0; height: 100%; background: #05070a; overflow: hidden; font: 12px/1.35 ui-monospace, Menlo, monospace; color: #cfd6df; }
+      .scene-host { position: absolute; inset: 0; overflow: hidden; background: #070b0d; }
+      .scene-canvas-wrap, .scene-canvas, .label-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+      .scene-canvas { display: block; }
+      .label-layer { pointer-events: none; overflow: hidden; }
+      #hud { position: fixed; right: 8px; bottom: 8px; z-index: 5; background: rgba(5, 7, 10, 0.72); border-radius: 8px; padding: 6px 8px; white-space: pre; pointer-events: none; font-size: 10px; }
+    </style>
+  </head>
+  <body>
+    <div class="scene-host scene-host--full"><div class="scene-canvas-wrap" id="wrap"></div><div class="scene-vignette"></div><div class="label-layer" id="labels"></div></div>
+    <div id="hud">loading…</div>
+    <script type="module" src="./scene.ts"></script>
+  </body>
+</html>
