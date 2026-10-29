@@ -1,0 +1,585 @@
+/* My Pools + entry ticket (workstream A). Scoped under .mypools: this file is
+   bundled before app.css and must win over shared base rules. */
+
+.mypools .page-sub {
+  margin-bottom: 12px;
+}
+
+/* ---------------- Summary strip ---------------- */
+.mypools .mp-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.mypools .mp-stat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 11px;
+  border-radius: 14px;
+  border: 1px solid var(--stroke);
+  background: linear-gradient(180deg, rgba(24, 31, 37, 0.82), rgba(12, 16, 19, 0.86));
+}
+.mypools .mp-stat__k {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mypools .mp-stat__v {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 18px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.mypools .mp-stat__v .icon {
+  width: 15px;
+  height: 15px;
+}
+
+/* ---------------- Tab panels ---------------- */
+.mypools .mp-panel {
+  animation: mp-in 0.32s var(--ease-out) both;
+}
+@keyframes mp-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mypools .mp-head {
+  margin: 14px 2px 10px;
+  font-size: 13px;
+}
+.mypools .mp-empty {
+  padding: 30px 18px 26px;
+}
+.mypools .mp-empty__action {
+  margin-top: 18px;
+}
+.mypools .mp-history {
+  margin-top: 14px;
+}
+
+/* ---------------- History rows ---------------- */
+.mypools .mp-tx {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  padding: 10px 12px;
+}
+.mypools .mp-tx__icon {
+  --tone: var(--cyan);
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone) 32%, transparent);
+}
+.mypools .mp-tx__icon--lime {
+  --tone: var(--lime);
+}
+.mypools .mp-tx__icon--yellow {
+  --tone: var(--yellow);
+}
+.mypools .mp-tx__icon--purple {
+  --tone: var(--purple);
+}
+.mypools .mp-tx__icon .icon {
+  width: 18px;
+  height: 18px;
+}
+.mypools .mp-tx__main {
+  flex: 1;
+  min-width: 0;
+}
+.mypools .mp-tx__title {
+  font-weight: 700;
+  font-size: 14px;
+}
+.mypools .mp-tx__meta {
+  font-size: 11px;
+}
+.mypools .mp-tx__amt {
+  flex: none;
+  font-size: 16px;
+  font-weight: 700;
+}
+.mypools .mp-tx__amt--neg {
+  color: var(--text-2);
+}
+
+/* ---------------- Entry ticket card ---------------- */
+.mypools .ticket {
+  --tone: var(--cyan);
+}
+.mypools .ticket--won {
+  --tone: var(--lime);
+  background:
+    radial-gradient(90% 120% at 0% 0%, rgba(198, 255, 61, 0.12), transparent 60%),
+    linear-gradient(180deg, rgba(24, 31, 37, 0.85), rgba(12, 16, 19, 0.9));
+}
+.mypools .ticket--lost {
+  --tone: #ff6b74;
+}
+.mypools .ticket--void {
+  --tone: var(--yellow);
+}
+.mypools .ticket::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 16px;
+  height: 44px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--tone);
+  box-shadow: 0 0 12px var(--tone);
+}
+.mypools .ticket__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 12px 12px 14px;
+}
+.mypools .ticket__icon {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone) 36%, transparent);
+  box-shadow: 0 0 18px -8px var(--tone);
+}
+.mypools .ticket__icon .icon {
+  width: 20px;
+  height: 20px;
+}
+.mypools .ticket__info {
+  flex: 1;
+  min-width: 0;
+}
+.mypools .ticket__kicker {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tone);
+}
+.mypools .ticket__q {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.22;
+}
+.mypools .ticket__meta {
+  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.mypools .ticket__flag {
+  flex: none;
+  font-size: 13px;
+  line-height: 1;
+}
+.mypools .ticket__side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+/* Perforated tear line with punched notches on both card edges. */
+.mypools .ticket__perf {
+  position: relative;
+  margin: 0 16px;
+  border-top: 1.5px dashed rgba(255, 255, 255, 0.13);
+}
+.mypools .ticket__perf::before,
+.mypools .ticket__perf::after {
+  content: '';
+  position: absolute;
+  top: -10px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 1px solid var(--stroke-2);
+}
+.mypools .ticket__perf::before {
+  left: -26px;
+}
+.mypools .ticket__perf::after {
+  right: -26px;
+}
+.mypools .ticket__stats {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.8fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 14px 12px;
+}
+.mypools .ticket__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.mypools .ticket__stat--end {
+  align-items: flex-end;
+  text-align: right;
+}
+.mypools .ticket__k {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.mypools .ticket__v {
+  font-size: 15px;
+  font-weight: 700;
+}
+.mypools .ticket__v--pay {
+  color: var(--tone);
+}
+.mypools .ticket--lost .ticket__v--pay {
+  color: var(--muted);
+}
+.mypools .ticket__note {
+  padding: 0 14px 12px;
+}
+
+/* ---------------- Entry detail ticket ---------------- */
+.mypools .xticket {
+  --tone: var(--cyan);
+}
+.mypools .xticket--won {
+  --tone: var(--lime);
+  border-color: rgba(198, 255, 61, 0.4);
+  box-shadow:
+    0 0 36px -12px var(--lime-glow),
+    0 18px 40px -22px #000;
+}
+.mypools .xticket--lost {
+  --tone: #ff6b74;
+}
+.mypools .xticket--void {
+  --tone: var(--yellow);
+}
+.mypools .xticket__hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 16px 16px;
+  border-bottom: 1px solid var(--stroke);
+  background:
+    radial-gradient(90% 140% at 0% 0%, color-mix(in srgb, var(--tone) 22%, transparent), transparent 65%),
+    repeating-linear-gradient(115deg, transparent 0 14px, rgba(255, 255, 255, 0.018) 14px 15px);
+}
+.mypools .xticket__orb {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 14%, #05080a);
+  border: 1.5px solid var(--tone);
+  box-shadow: 0 0 26px -4px var(--tone);
+}
+.mypools .xticket__orb .icon {
+  width: 28px;
+  height: 28px;
+}
+.mypools .xticket--won .xticket__orb {
+  color: #0b1200;
+  background: radial-gradient(circle at 40% 32%, #ecffad, #93d61c 75%);
+  animation: mp-orb 0.8s var(--ease-spring) both;
+}
+.mypools .xticket--won .xticket__orb::before,
+.mypools .xticket--won .xticket__orb::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--lime);
+  animation: ring 1.8s ease-out 0.3s 3;
+  opacity: 0;
+}
+.mypools .xticket--won .xticket__orb::after {
+  animation-delay: 0.9s;
+}
+.mypools .xticket--pending .xticket__orb {
+  animation: mp-breathe 2.4s ease-in-out infinite;
+}
+@keyframes mp-orb {
+  0% {
+    transform: scale(0.3) rotate(-30deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes mp-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 18px -6px var(--tone);
+  }
+  50% {
+    box-shadow: 0 0 30px -2px var(--tone);
+  }
+}
+.mypools .xticket__headline {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mypools .xticket__label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.mypools .xticket__amount {
+  font-size: 31px;
+  font-weight: 700;
+  line-height: 1.08;
+  color: var(--tone);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--tone) 55%, transparent);
+  white-space: nowrap;
+}
+.mypools .xticket__amount small {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--text-2);
+  text-shadow: none;
+}
+.mypools .xticket__body {
+  padding: 14px 16px;
+}
+.mypools .xticket__q {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.mypools .xticket__anchor {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.mypools .xticket .ticket__kicker {
+  color: var(--tone);
+}
+.mypools .xticket .ticket__perf {
+  margin: 0 16px;
+}
+.mypools .xticket__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 14px 16px 0;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--stroke-2);
+  background: var(--stroke-2);
+}
+.mypools .xticket__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: rgba(8, 11, 13, 0.94);
+}
+.mypools .xticket__cell .ticket__k {
+  white-space: normal;
+  line-height: 1.2;
+}
+.mypools .xticket__v {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 17px;
+  font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mypools .xticket__v .icon {
+  width: 15px;
+  height: 15px;
+}
+.mypools .xticket__v--pay {
+  color: var(--tone);
+}
+.mypools .xticket--lost .xticket__v--pay {
+  color: var(--muted);
+}
+.mypools .xticket__ids {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 16px 14px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.mypools .xticket__chequer {
+  height: 10px;
+  opacity: 0.16;
+  background: repeating-conic-gradient(#e9eef0 0 25%, #0b0f12 0 50%) 0 0 / 10px 10px;
+}
+.mypools .xticket-await .row {
+  align-items: center;
+}
+.mypools .xticket-await__ring {
+  width: 22px;
+  height: 22px;
+  border-width: 2px;
+}
+
+/* ---------------- Settlement proof ---------------- */
+.mypools .proof__title {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mypools .proof__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  padding: 9px 0;
+  border-top: 1px solid var(--stroke);
+  font-size: 13px;
+}
+.mypools .proof__row--block {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+.mypools .proof__row--block .proof__k {
+  max-width: none;
+}
+.mypools .proof__row--block .proof__v {
+  text-align: left;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.mypools .proof__title + .proof__row {
+  border-top: 0;
+}
+.mypools .proof__k {
+  flex: none;
+  max-width: 42%;
+  color: var(--muted);
+}
+.mypools .proof__v {
+  min-width: 0;
+  text-align: right;
+}
+.mypools .values {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+.mypools .values__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+}
+.mypools .values__row:first-child {
+  border-top: 0;
+}
+.mypools .values__v {
+  font-weight: 700;
+  color: var(--cyan);
+}
+
+/* Evidence timeline */
+.mypools .evidence {
+  display: flex;
+  flex-direction: column;
+}
+.mypools .evidence__row {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+}
+.mypools .evidence__row::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: rgba(47, 230, 255, 0.25);
+}
+.mypools .evidence__row:first-child::before {
+  top: 14px;
+}
+.mypools .evidence__row:last-child::before {
+  bottom: calc(100% - 14px);
+}
+.mypools .evidence__dot {
+  position: relative;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
+  flex: none;
+  border-radius: 50%;
+  background: #05080a;
+  border: 2px solid var(--cyan);
+  box-shadow: 0 0 8px var(--cyan-glow);
+}
+.mypools .evidence__main {
+  flex: 1;
+  min-width: 0;
+}
+.mypools .evidence__type {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--cyan);
+}
+.mypools .evidence__id {
+  font-size: 12px;
+}
+.mypools .evidence__meta {
+  font-size: 11px;
+}
