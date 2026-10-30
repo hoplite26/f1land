@@ -16,7 +16,7 @@ import { IconEye, IconFast, IconLayers, IconMap, IconPause, IconPlay, IconSettin
 import { haptic } from '@/telegram/sdk';
 import { sfx } from '@/audio/sfx';
 import { DragSheet, type Snap } from '@/ui/bet/DragSheet';
-import { Charts, EventsFeed, FollowCard, MomentIcon, MOMENT_TONE, MyEntries, PoolsTab, TimingTable, TowerPanel, TowerStrip, momentText } from '@/ui/bet/livePanels';
+import { Charts, EventsFeed, FollowCard, MomentIcon, MOMENT_TONE, MyEntries, PanelSkeleton, PoolsTab, TimingTable, TowerPanel, TowerStrip, momentText } from '@/ui/bet/livePanels';
 import { CAMERA_ICON, FlagGlyph, IcChart, IcChat, IcCloud, IcList, IcRain, IcSun, IcTicket, IcTrophy, RcBadge } from '@/ui/bet/icons';
 import '@/styles/live.css';
 
@@ -29,7 +29,8 @@ const CAMS: CameraMode[] = ['director', 'follow', 'tv', 'heli', 'onboard', 'orbi
 
 function snapHeights(zone: number): Record<Snap, number> {
   const full = Math.max(320, zone);
-  const peek = Math.round(Math.min(250, Math.max(186, zone * 0.31)));
+  // Peek includes the strip of the nav's raised LIVE button so the pool cards end above it.
+  const peek = Math.round(Math.min(266, Math.max(202, zone * 0.31 + 16)));
   const half = Math.round(Math.max(peek + 90, Math.min(full - 80, zone * 0.56)));
   return { peek, half, full };
 }
@@ -49,6 +50,9 @@ export function LiveScreen() {
   const setSceneView = useSceneView((s) => s.set);
   const webglLost = useSceneView((s) => s.webglLost);
   const pickList = useSceneView((s) => s.pickList);
+  const sceneReady = useSceneView((s) => s.sceneReady);
+  const buildProgress = useSceneView((s) => s.buildProgress);
+  const renderMode = useSettings((s) => s.renderMode);
   const motionPref = useSettings((s) => s.motion);
   const reduced = prefersReducedMotion(motionPref);
   const openPools = usePools((s) => s.pools.filter((p) => p.pool.status === 'OPEN').length);
@@ -75,7 +79,7 @@ export function LiveScreen() {
   useEffect(() => {
     setSceneView({ layout: 'full', zone: null, frameZone: false, labels: [], cameraOverride: null, frozen: false });
     return () => {
-      setSceneView({ layout: 'hidden' });
+      setSceneView({ layout: 'hidden', insets: { top: 0, bottom: 0 } });
       document.documentElement.style.removeProperty('--lv-scene-cut');
     };
   }, [setSceneView]);
@@ -96,14 +100,34 @@ export function LiveScreen() {
     document.documentElement.style.setProperty('--lv-scene-cut', `${heights.peek - 18}px`);
   }, [heights.peek]);
 
+  // Canvas area hidden by the top bar / timing strip / flags and by the cards above the sheet
+  // (transient moment toasts excluded so the camera does not jump with them).
+  const measureInsets = useCallback(() => {
+    const root = rootRef.current;
+    const host = document.querySelector('.scene-host');
+    if (!root || !host) return;
+    const hr = host.getBoundingClientRect();
+    if (hr.height < 2) return;
+    let top = hr.top;
+    root.querySelectorAll('.lv-top, .tw-strip, .lv-flags').forEach((el) => (top = Math.max(top, el.getBoundingClientRect().bottom)));
+    let bottom = hr.bottom;
+    aboveRef.current?.querySelectorAll(':scope > :not(.lv-moments)').forEach((el) => (bottom = Math.min(bottom, el.getBoundingClientRect().top)));
+    const next = { top: Math.round(top - hr.top + 6), bottom: Math.max(0, Math.round(hr.bottom - bottom + 6)) };
+    const cur = useSceneView.getState().insets;
+    if (Math.abs(cur.top - next.top) > 2 || Math.abs(cur.bottom - next.bottom) > 2) setSceneView({ insets: next });
+  }, [setSceneView]);
+
   useLayoutEffect(() => {
     const a = aboveRef.current;
     const root = rootRef.current;
     if (!a || !root) return;
-    const ro = new ResizeObserver(() => root.style.setProperty('--lv-above', `${a.offsetHeight}px`));
+    const ro = new ResizeObserver(() => {
+      root.style.setProperty('--lv-above', `${a.offsetHeight}px`);
+      measureInsets();
+    });
     ro.observe(a);
     return () => ro.disconnect();
-  }, []);
+  }, [measureInsets]);
 
   const onSheetHeight = useCallback((px: number) => {
     rootRef.current?.style.setProperty('--lv-sheet', `${Math.round(px)}px`);
@@ -111,6 +135,24 @@ export function LiveScreen() {
 
   const follow = live?.cars.find((c) => c.id === followId) ?? null;
   const flags = live ? flagItems(live) : [];
+  const syncing = loading || !live;
+  const building = renderMode === '3d' && !webglLost && !sceneReady;
+
+  // The scene's camera tag sits under the timing strip (and under the flag row when it is shown).
+  useEffect(() => {
+    document.documentElement.style.setProperty('--lv-cam-top', `calc(var(--safe-top, 0px) + ${flags.length ? 156 : 120}px)`);
+  }, [flags.length]);
+  const hasLive = live !== null;
+  useEffect(() => {
+    const id = requestAnimationFrame(measureInsets);
+    return () => cancelAnimationFrame(id);
+  }, [measureInsets, heights.peek, flags.length, hasLive, towerOpen]);
+  useEffect(
+    () => () => {
+      document.documentElement.style.removeProperty('--lv-cam-top');
+    },
+    [],
+  );
 
   const pickTab = (v: Tab) => {
     if (v !== tab) {
@@ -253,17 +295,8 @@ export function LiveScreen() {
         <MomentStack />
         {mode === 'replay' && runner && <ReplayBar />}
         {follow && live && <FollowCard car={follow} cars={live.cars} quali={isQuali} rivalId={rivalId} onSwap={() => (haptic.tap(), setDriverPicker(true))} onRival={setRival} />}
+        {(syncing || building) && <SyncCard syncing={syncing} progress={syncing ? progress : buildProgress} />}
       </div>
-
-      {(loading || !live) && (
-        <div className="lv-loading">
-          <div className="lv-loading__ring" />
-          <div className="lv-loading__t">{t('ui.syncing')}</div>
-          <div className="lv-progress">
-            <span style={{ width: `${Math.round(progress * 100)}%` }} />
-          </div>
-        </div>
-      )}
 
       <DragSheet
         snap={snap}
@@ -298,6 +331,7 @@ export function LiveScreen() {
           />
         )}
         {tab === 'events' && live && <EventsFeed moments={live.moments} />}
+        {(tab === 'timing' || tab === 'events') && !live && <PanelSkeleton kind="rows" label={t('lv.empty.timing')} />}
         {tab === 'mine' && <MyEntries />}
         {tab === 'graphs' && <Charts />}
       </DragSheet>
@@ -387,6 +421,24 @@ export function LiveScreen() {
 }
 
 /* ------------------------------------------------------------------ */
+
+/** Non-blocking startup status: the circuit is already visible behind it (progressive start). */
+function SyncCard({ syncing, progress }: { syncing: boolean; progress: number }) {
+  const pct = Math.round(Math.min(1, Math.max(0, progress)) * 100);
+  return (
+    <div className="lv-sync" role="status" aria-live="polite">
+      <span className="lv-sync__ring" aria-hidden="true" />
+      <span className="lv-sync__body">
+        <b className="lv-sync__title">{syncing ? t('ui.syncing') : t('ui.building')}</b>
+        <span className="lv-sync__hint">{syncing ? t('lv.sync.hint') : t('lv.sync.buildHint')}</span>
+        <span className="lv-progress" aria-hidden="true">
+          <span style={{ width: `${pct}%` }} />
+        </span>
+      </span>
+      <span className="lv-sync__pct num">{pct}%</span>
+    </div>
+  );
+}
 
 function WeatherIcon({ c }: { c: LiveState['weather']['condition'] }) {
   if (c === 'WET') return <IcRain size={13} />;

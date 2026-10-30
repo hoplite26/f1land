@@ -2,7 +2,7 @@ import { F1_I18N } from '@/domain/markets/i18n';
 import { describePool, getTemplate } from '@/domain/markets/catalog';
 import type { MarketId, Outcome, Pool } from '@/domain/types';
 import { DRIVER_BY_ID } from '@/data/teams';
-import { fmtClock, fmtLap, fmtNumber, fmtSec, registerDict, t } from '@/i18n/core';
+import { fmtClock, fmtLap, fmtSec, registerDict, t } from '@/i18n/core';
 
 registerDict('ru', F1_I18N.ru);
 registerDict('en', F1_I18N.en);
@@ -17,13 +17,19 @@ export function driverCode(id: string): string {
   return DRIVER_BY_ID[id]?.code ?? id.slice(0, 3).toUpperCase();
 }
 
+/** Exact seconds from integer ms with only the digits that matter: 21000 → 21, 2500 → 2,5, 24510 → 24,51. */
+export function secsExact(ms: number): string {
+  const digits = ms % 1000 === 0 ? 0 : ms % 100 === 0 ? 1 : ms % 10 === 0 ? 2 : 3;
+  return fmtSec(ms, digits);
+}
+
 /** Map raw pool params (driver ids, ms, ISO) to display strings. Names are never translated (F1-052). */
-export function formatParams(params: Record<string, string | number> | undefined, marketId?: string): Record<string, string | number> {
+export function formatParams(params: Record<string, string | number> | undefined, _marketId?: string): Record<string, string | number> {
   const out: Record<string, string | number> = {};
   if (!params) return out;
   for (const [k, v] of Object.entries(params)) {
     if (DRIVER_KEYS.has(k) && typeof v === 'string') out[k] = driverShort(v);
-    else if ((k === 't1' || k === 't2') && typeof v === 'number') out[k] = marketId === 'F1-M19' ? fmtSec(v) : fmtNumber(v);
+    else if ((k === 't1' || k === 't2') && typeof v === 'number') out[k] = secsExact(v);
     else if (k === 'reference' && typeof v === 'number') out[k] = fmtLap(v);
     else if ((k === 'at' || k === 'from' || k === 'to') && typeof v === 'string') out[k] = fmtClock(Date.parse(v), true);
     else if (k === 'value' && typeof v === 'string' && DRIVER_BY_ID[v]) out[k] = driverShort(v);
@@ -78,7 +84,7 @@ export function outcomeLabel(o: Outcome, marketId?: string): string {
 
 /** Seconds label for pit/sector thresholds: 2,5 с · 24,51 с. */
 function secs(ms: number): string {
-  return `${fmtSec(ms, ms >= 10_000 ? 2 : 1)} ${t('pl.unit.s')}`;
+  return `${secsExact(ms)} ${t('pl.unit.s')}`;
 }
 
 const SHORT_KEYS: Record<string, string> = {
@@ -119,13 +125,13 @@ export function outcomeShort(o: Outcome, pool: Pick<Pool, 'market_id' | 'subject
   if (/^P\d+$/.test(id) && pool.market_id === 'F1-M01') return id;
   if (GROUP_SHORT[id]) return GROUP_SHORT[id];
   if (STATUS_SHORT[id]) return STATUS_SHORT[id];
-  if (['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET'].includes(id)) return t(`tyre.${id.toLowerCase()}`);
+  if (['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET'].includes(id)) return t(`pd.tyre.${id.toLowerCase()}`);
   if (id.startsWith('BUCKET_')) {
     const t1 = p.t1_ms ?? Number(o.label_params?.t1 ?? 0);
     const t2 = p.t2_ms ?? Number(o.label_params?.t2 ?? 0);
     if (id === 'BUCKET_1') return `< ${secs(t1)}`;
     if (id === 'BUCKET_3') return `≥ ${secs(t2)}`;
-    return `${fmtSec(t1, t1 >= 10_000 ? 2 : 1)}–${secs(t2)}`;
+    return `${secsExact(t1)}–${secs(t2)}`;
   }
   if (SHORT_KEYS[id]) return t(SHORT_KEYS[id]);
   return outcomeLabel(o, pool.market_id);
@@ -138,7 +144,9 @@ export function comboParts(pool: Pick<Pool, 'target'>): Array<{ kind: string; dr
     if (part.kind === 'POSITION_GROUP') value = t(`f1.combo.group.${part.value.toLowerCase()}`);
     else if (part.kind === 'TYRE_COMPOUND') value = t(`tyre.${part.value.toLowerCase()}`);
     else if (part.kind === 'AHEAD_OF') value = driverShort(part.value);
-    return { kind: part.kind, driver: part.driver_id, text: t(`f1.combo.part.${part.kind.toLowerCase()}`, { driver: driverShort(part.driver_id), value }) };
+    // Word joiners keep ranges like “P1–P3” on one line.
+    const text = t(`f1.combo.part.${part.kind.toLowerCase()}`, { driver: driverShort(part.driver_id), value }).replace(/(P\d+)–(P\d+)/g, '$1\u2060–\u2060$2');
+    return { kind: part.kind, driver: part.driver_id, text };
   });
 }
 

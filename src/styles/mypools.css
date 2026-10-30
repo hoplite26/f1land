@@ -23,9 +23,9 @@
   background: linear-gradient(180deg, rgba(24, 31, 37, 0.82), rgba(12, 16, 19, 0.86));
 }
 .mypools .mp-stat__k {
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
   white-space: nowrap;
@@ -195,7 +195,7 @@
 .mypools .ticket__meta {
   margin-top: 5px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 5px;
   font-size: 11.5px;
   color: var(--muted);
@@ -237,7 +237,7 @@
 }
 .mypools .ticket__stats {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.8fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
   padding: 10px 14px 12px;
 }
@@ -247,14 +247,20 @@
   gap: 2px;
   min-width: 0;
 }
+.mypools .ticket__stat--pick {
+  grid-column: 1 / -1;
+}
+.mypools .ticket__stat--pick .ticket__v {
+  line-height: 1.25;
+}
 .mypools .ticket__stat--end {
   align-items: flex-end;
   text-align: right;
 }
 .mypools .ticket__k {
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
   white-space: nowrap;
@@ -436,6 +442,10 @@
   width: 15px;
   height: 15px;
 }
+.mypools .xticket__cell--pick,
+.mypools .xticket__cell--pay {
+  grid-column: 1 / -1;
+}
 .mypools .xticket__v--pay {
   color: var(--tone);
 }
@@ -454,6 +464,21 @@
   height: 10px;
   opacity: 0.16;
   background: repeating-conic-gradient(#e9eef0 0 25%, #0b0f12 0 50%) 0 0 / 10px 10px;
+}
+.mypools .xticket-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+.mypools .xticket-actions .btn {
+  min-height: 48px;
+}
+/* Three tabs share ~320px on a 360px phone: keep each label clear of its pill border. */
+.mypools .segmented__btn {
+  gap: 5px;
+  padding: 0 8px;
 }
 .mypools .xticket-await .row {
   align-items: center;

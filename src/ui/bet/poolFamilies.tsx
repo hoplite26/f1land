@@ -6,11 +6,11 @@ import type { Outcome, Pool } from '@/domain/types';
 import type { LiveCar, Moment } from '@/sim/types';
 import { DRIVER_BY_ID, TEAM_BY_ID } from '@/data/teams';
 import { fmtCountdown, fmtGap, fmtLap, fmtNumber, fmtSec, t } from '@/i18n/core';
-import { comboParts, driverCode, outcomeLabel, outcomeShort, type PoolLayout } from '@/app/poolText';
+import { comboParts, driverCode, outcomeLabel, outcomeShort, secsExact, type PoolLayout } from '@/app/poolText';
 import { DriverAvatar, Sparkline, TyreBadge } from '@/ui/kit';
 import { SECTOR_COLORS } from '@/ui/TrackMap';
 import { IconPit } from '@/ui/icons';
-import { OutcomeTile, type TileVariant } from './parts';
+import { OutcomeTile, oddsText, type TileVariant } from './parts';
 import { MomentIcon, momentText } from './livePanels';
 import { FlagGlyph, IcArrowDown, IcArrowUp, IcEqual, IcLink, IcNo, IcPass, IcPodium, IcRetire, IcStopwatch, IcSwapCar, IcYes, RcBadge, TyreRing } from './icons';
 
@@ -35,6 +35,16 @@ interface TileSpec {
 const MINOR_IDS = new Set(['RETIRED', 'DNS', 'DSQ', 'NOT_CLASSIFIED', 'BOTH_INACTIVE', 'NO_VALID_LAP', 'NO_VALID_SECTOR', 'NEITHER_VALID', 'OTHER_CONFIRMED', 'NO_EXIT', 'NO_SERVICE', 'NO_VISIT', 'TIE', 'SIMULTANEOUS']);
 
 const BUCKET_HINT: Record<string, string> = { BUCKET_1: 'pl.bucket.low', BUCKET_2: 'pl.bucket.mid', BUCKET_3: 'pl.bucket.high' };
+
+/**
+ * Multiplier shown for an outcome everywhere (tiles, scene chips, dock, confirmation): the final value once
+ * the pool is locked, otherwise the estimate that includes the user's current stake — so the number on a tile
+ * is exactly the number the ticket will show, and thinly staked outcomes don't all read as the 50x cap.
+ */
+export function outcomeOdds(lp: LivePool, id: string, stake: number): number {
+  if (lp.pool.status !== 'OPEN') return lp.book.finalMultipliers?.[id] ?? multiplier(lp.book, id);
+  return multiplier(lp.book, id, stake);
+}
 
 /** Icon used for an outcome everywhere (tiles, ticket, confirmation). */
 export function outcomeIcon(o: Outcome, pool: Pick<Pool, 'market_id' | 'subject'>, size = 26): ReactNode {
@@ -92,7 +102,7 @@ function specsFor(pool: Pool, layout: PoolLayout, circuitKm: number[]): TileSpec
     if (layout === 'zone') {
       if (/^S[123]$/.test(id)) {
         const s = Number(id[1]);
-        return { ...base, variant: 'zone', label: t('f1.outcome.sector', { sector: s }), sub: circuitKm[s - 1] ? `${circuitKm[s - 1]!.toFixed(1)} km` : undefined, color: SECTOR_COLORS[s - 1], icon: undefined };
+        return { ...base, variant: 'zone', label: t('f1.outcome.sector', { sector: s }), sub: circuitKm[s - 1] ? `${fmtNumber(circuitKm[s - 1]!, 1)} ${t('pd.unit.km')}` : undefined, color: SECTOR_COLORS[s - 1], icon: undefined };
       }
       return { ...base, variant: 'zone', label: t('pl.pitLane'), sub: t('pl.pitSub'), color: 'var(--cyan)', icon: undefined };
     }
@@ -109,7 +119,7 @@ function specsFor(pool: Pool, layout: PoolLayout, circuitKm: number[]): TileSpec
     if (id.startsWith('BUCKET_')) return { ...base, sub: t(BUCKET_HINT[id]!) };
     if (['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET'].includes(id)) return { ...base, sub: undefined };
     if (m === 'F1-M08' && ['FASTER', 'EQUAL', 'SLOWER'].includes(id)) return { ...base, sub: t('pl.sub.vsRef') };
-    if (m === 'F1-M10') return { ...base, label: id === 'NONE' ? t('pl.short.none') : id === 'RED' ? t('pl.short.red') : id === 'SC' ? 'Safety Car' : 'Virtual SC', sub: id === 'NONE' ? t('pl.sub.noNeutral') : t('pl.sub.nextOnTrack') };
+    if (m === 'F1-M10') return { ...base, label: t(`pd.m10.${id.toLowerCase()}`), sub: id === 'NONE' ? t('pl.sub.noNeutral') : t('pl.sub.nextOnTrack') };
     if (m === 'F1-M12' && id === 'NONE') return { ...base, variant: 'wide', label: outcomeLabel(o, m), sub: t('pl.sub.window') };
     if (m === 'F1-M01' && /^P\d+$/.test(id)) return { ...base, variant: 'num', icon: undefined };
     if ((m === 'F1-M13' || m === 'F1-M18') && !minor) return { ...base, sub: t(`pl.group.${id.toLowerCase()}`), icon: <span className="grp-ico num">{id === 'P1' ? '1' : id.replace('P', '').replace('_PLUS', '+').replace('_', '–')}</span> };
@@ -153,12 +163,12 @@ export function OutcomeGrid({
     return c.sectors.map((s) => (((s.endS - s.startS + c.centerlineLengthM) % c.centerlineLengthM) || c.centerlineLengthM) / 1000);
   }, [runner]);
   const specs = specsFor(pool, layout, km);
-  const locked = pool.status !== 'OPEN';
   const winner = pool.status === 'SETTLED' ? pool.settlement?.winner_outcome_id ?? null : null;
-  const oddsOf = (id: string) => (locked && lp.book.finalMultipliers?.[id] ? lp.book.finalMultipliers[id]! : multiplier(lp.book, id, value === id ? stake : 0));
-  const tile = (s: TileSpec) => (
+  const oddsOf = (id: string) => outcomeOdds(lp, id, stake);
+  const tile = (s: TileSpec, compact = false) => (
     <OutcomeTile
       key={s.o.id}
+      compact={compact}
       variant={s.variant}
       label={s.label}
       sub={s.sub}
@@ -169,7 +179,7 @@ export function OutcomeGrid({
       disabled={disabled}
       mine={myPicks.has(s.o.id)}
       result={winner ? (winner === s.o.id ? 'win' : 'lose') : null}
-      ariaLabel={`${outcomeLabel(s.o, pool.market_id)} · ${oddsOf(s.o.id).toFixed(2)}x`}
+      ariaLabel={`${outcomeLabel(s.o, pool.market_id)} · ${oddsText(oddsOf(s.o.id))}`}
       onSelect={() => onChange(s.o.id)}
     />
   );
@@ -198,20 +208,20 @@ export function OutcomeGrid({
 
   return (
     <div className="og" role="radiogroup" aria-label={t('pool.choose')}>
-      {wide.length > 0 && <div className="og__wide">{wide.map(tile)}</div>}
+      {wide.length > 0 && <div className="og__wide">{wide.map((s) => tile(s))}</div>}
       {rest.length > 0 && (
         <div className={`og__grid og__grid--${layout}`} style={{ ['--cols' as string]: String(cols) }}>
-          {rest.map(tile)}
+          {rest.map((s) => tile(s, cols >= 3))}
         </div>
       )}
       {nums.length > 0 && (
         <div className="og__nums">
-          {[...nums].sort((x, y) => Number(x.o.id.slice(1)) - Number(y.o.id.slice(1))).map(tile)}
+          {[...nums].sort((x, y) => Number(x.o.id.slice(1)) - Number(y.o.id.slice(1))).map((s) => tile(s))}
         </div>
       )}
       {visibleDrivers.length > 0 && (
         <>
-          <div className="og__drivers">{visibleDrivers.map(tile)}</div>
+          <div className="og__drivers">{visibleDrivers.map((s) => tile(s))}</div>
           {driverList.length > 9 && (
             <button type="button" className="og__more" onClick={() => setShowAll(!showAll)} aria-expanded={showAll}>
               {showAll ? t('ui.collapse') : t('pl.showAll', { n: driverList.length })}
@@ -222,7 +232,7 @@ export function OutcomeGrid({
       {minor.length > 0 && (
         <>
           <div className="og__minor-k">{t('pl.otherOutcomes')}</div>
-          <div className="og__minor">{minor.map(tile)}</div>
+          <div className="og__minor">{minor.map((s) => tile(s))}</div>
         </>
       )}
     </div>
@@ -344,7 +354,7 @@ function DuelVisual({ a, b, ca, cb, quali }: { a: string; b: string; ca?: LiveCa
             <div className="duel2__meta">
               <span className="num duel2__pos">{c ? `P${c.position}` : '—'}</span>
               {c && !quali && <TyreBadge compound={c.tyre} size={18} />}
-              {c?.boost && <span className="duel2__boost">OVERTAKE</span>}
+              {c?.boost && <span className="duel2__boost">{t('pd.overtake')}</span>}
             </div>
           </div>
         );
@@ -367,7 +377,7 @@ function PitLane({ mode }: { mode: 'entry' | 'service' | 'lane' }) {
         {(['in', 'box', 'out'] as const).map((k) => (
           <span key={k} className={`pitlane__node pitlane__node--${k} ${on(k) ? 'pitlane__node--on' : ''}`}>
             <span className="pitlane__dot">{k === 'box' ? <IconPit size={15} className="icon" /> : k === 'in' ? '↘' : '↗'}</span>
-            <span className="pitlane__label">{k === 'in' ? 'PIT IN' : k === 'out' ? 'PIT OUT' : t('pl.pitBox')}</span>
+            <span className="pitlane__label">{k === 'in' ? t('pd.pitIn') : k === 'out' ? t('pd.pitOut') : t('pl.pitBox')}</span>
           </span>
         ))}
       </div>
@@ -426,7 +436,7 @@ function PitVisual({ pool, car, focus, cars }: { pool: Pool; car?: LiveCar; focu
           <IcStopwatch size={16} />
           <span>{m === 'F1-M05' ? t('f1.pit.stationary') : t('f1.pit.lane')}</span>
           <b className="num">
-            {fmtSec(p.t1_ms, 1)} – {fmtSec(p.t2_ms, 1)} {t('pl.unit.s')}
+            {secsExact(p.t1_ms)}–{secsExact(p.t2_ms)} {t('pl.unit.s')}
           </b>
         </div>
       )}
@@ -520,12 +530,12 @@ function PaceVisual({ pool, car }: { pool: Pool; car?: LiveCar }) {
           </div>
         )}
         {m === 'F1-M19' && p.sector && (
-          <div className="pace__cell">
+          <div className="pace__cell pace__cell--wide">
             <span className="pace__k">
               <span className="zone-dot zone-dot--sm" style={{ background: SECTOR_COLORS[p.sector - 1] }} /> {t('f1.outcome.sector', { sector: p.sector })}
             </span>
             <b className="num pace__v" style={{ color: SECTOR_COLORS[p.sector - 1] }}>
-              {fmtSec(p.t1_ms ?? null, 2)}–{fmtSec(p.t2_ms ?? null, 2)}
+              {p.t1_ms !== undefined && p.t2_ms !== undefined ? `${secsExact(p.t1_ms)}–${secsExact(p.t2_ms)} ${t('pl.unit.s')}` : '—'}
             </b>
             <span className="pace__sub">{t('pl.band')}</span>
           </div>

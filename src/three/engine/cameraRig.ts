@@ -80,6 +80,10 @@ export class CameraRig {
   private overviewOffset = new THREE.Vector3(0, 900, 600);
   private boundsW = 1200;
   private boundsH = 1200;
+  /** Viewport height fractions covered by screen UI (top strip / bottom cards). */
+  private insetTop = 0;
+  private insetBottom = 0;
+  private viewH = 1;
   private lastSubjectPos = new THREE.Vector3();
   private orbitInit = false;
   private fly: { fromPos: THREE.Vector3; fromTarget: THREE.Vector3; toPos: THREE.Vector3; toTarget: THREE.Vector3; t: number } | null = null;
@@ -89,6 +93,8 @@ export class CameraRig {
   private hasPose = false;
   /** The camera has shown at least one frame (fly-ins need a start pose). */
   private posed = false;
+  /** Showing the whole-circuit establishing view while no car is on screen yet (feed syncing). */
+  private establishing = false;
   /** Called when the visible shot changes (for the on-screen camera tag). */
   onShot: ((shot: CameraShot) => void) | null = null;
 
@@ -139,18 +145,41 @@ export class CameraRig {
     this.barrier = barrier;
   }
 
+  /**
+   * Screen UI covering the top/bottom of the canvas (px of a viewport `heightPx` tall):
+   * the projection centre moves into the free band and the overview is fitted into it.
+   */
+  setInsets(topPx: number, bottomPx: number, heightPx: number): void {
+    const h = Math.max(1, heightPx);
+    this.viewH = h;
+    this.insetTop = THREE.MathUtils.clamp(topPx / h, 0, 0.45);
+    this.insetBottom = THREE.MathUtils.clamp(bottomPx / h, 0, 0.45);
+    this.applyViewOffset();
+    if (this.track) this.fitOverview(this.boundsW, this.boundsH);
+  }
+
+  private applyViewOffset(): void {
+    const shift = ((this.insetTop - this.insetBottom) / 2) * this.viewH;
+    if (Math.abs(shift) < 0.5) this.camera.clearViewOffset();
+    else {
+      const w = Math.round(this.viewH * this.camera.aspect);
+      this.camera.setViewOffset(w, this.viewH, 0, -shift, w, this.viewH);
+    }
+  }
+
   private fitOverview(w: number, h: number): void {
     this.boundsW = w;
     this.boundsH = h;
     const aspect = this.camera.aspect;
-    const vf = THREE.MathUtils.degToRad(45) / 2;
+    // Vertical half-angle of the band left free by the screen UI.
+    const vf = Math.atan(Math.tan(THREE.MathUtils.degToRad(45) / 2) * Math.max(0.4, 1 - this.insetTop - this.insetBottom));
     const portrait = aspect < 1;
     const pitch = THREE.MathUtils.degToRad(portrait ? 56 : 50);
     // Portrait phones: put the long axis of the circuit into screen depth; landscape: across the screen.
     const longX = w >= h;
     const horizontal = portrait ? Math.min(w, h) : Math.max(w, h);
     const depth = portrait ? Math.max(w, h) : Math.min(w, h);
-    const distH = horizontal / 2 / (Math.tan(vf) * aspect);
+    const distH = horizontal / 2 / (Math.tan(THREE.MathUtils.degToRad(45) / 2) * aspect);
     const distV = ((depth / 2) * Math.sin(pitch)) / Math.tan(vf);
     const dist = Math.max(distH, distV) * 1.08 + 60;
     const alongX = portrait ? longX : !longX;
@@ -183,6 +212,7 @@ export class CameraRig {
 
   resize(aspect: number): void {
     this.camera.aspect = aspect;
+    this.applyViewOffset();
     this.camera.updateProjectionMatrix();
     if (this.track) this.fitOverview(this.boundsW, this.boundsH);
   }
@@ -294,7 +324,10 @@ export class CameraRig {
       this.updateOrbit(dt, subject);
       return;
     }
-    if (!subject || !this.track) return;
+    if (!subject || !this.track) {
+      if (this.track) this.establish();
+      return;
+    }
 
     // Resolve the shot.
     if (this.mode === 'director') {
@@ -304,6 +337,16 @@ export class CameraRig {
       this.activeTv = -1;
       this.onShot?.(this.shot);
       this.lastShot = this.shot;
+    }
+    if (this.establishing) {
+      // First car on screen after the establishing view: swoop down instead of a hard cut.
+      this.establishing = false;
+      this.beginTransition(this.reducedMotion ? 0 : 1.6);
+      this.hasPose = false;
+      if (this.lastShot !== this.shot) {
+        this.onShot?.(this.shot);
+        this.lastShot = this.shot;
+      }
     }
 
     // Subject lateral (for track-guided framing).
@@ -337,11 +380,12 @@ export class CameraRig {
       }
       case 'heli': {
         this.heliAngle += dt * 0.1;
-        const r = 62;
+        // Steep (~56°) so grandstands and pit buildings beside the track never hide the car.
+        const r = 48;
         const a = this.heliAngle;
-        this.idealPos.copy(subject.pos).add(this.tmp.set(Math.cos(a) * r, 46, Math.sin(a) * r)).addScaledVector(f, 18);
-        this.idealLook.copy(subject.pos).addScaledVector(f, 6);
-        this.idealFov = 40;
+        this.idealPos.copy(subject.pos).add(this.tmp.set(Math.cos(a) * r, 72, Math.sin(a) * r)).addScaledVector(f, 14);
+        this.idealLook.copy(subject.pos).addScaledVector(f, 5);
+        this.idealFov = 34;
         stiffPos = 3;
         stiffLook = 8;
         break;
@@ -382,8 +426,10 @@ export class CameraRig {
           this.idealPos.copy(cam.pos);
           this.idealLook.copy(subject.pos).addScaledVector(f, Math.min(8, v * 0.08)).addScaledVector(UP, 0.4);
           const dist = cam.pos.distanceTo(subject.pos);
-          // Long lens: keep the car ~1/4 of the frame wide, widen as it gets close.
-          this.idealFov = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(15 / Math.max(1, dist))), 6, 48);
+          // Long lens: the car fills about a third of the frame width on any aspect
+          // (portrait phones need a taller frame), widening as it gets close.
+          const frameH = THREE.MathUtils.clamp(18 / Math.max(0.3, this.camera.aspect), 10, 32);
+          this.idealFov = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(frameH / 2 / Math.max(1, dist))), 3, 68);
           stiffPos = 1000;
           stiffLook = 7;
         } else {
@@ -406,6 +452,22 @@ export class CameraRig {
       this.fov += (this.idealFov - this.fov) * Math.min(1, dt * 5);
     }
     this.applyPose(dt);
+  }
+
+  /** Static whole-circuit view used until the first frame of the feed arrives. */
+  private establish(): void {
+    this.idealPos.copy(this.overviewTarget).add(this.overviewOffset);
+    this.idealLook.copy(this.overviewTarget);
+    this.pos.copy(this.idealPos);
+    this.look.copy(this.idealLook);
+    this.fov = 45;
+    this.transT = 1;
+    this.establishing = true;
+    if (this.lastShot !== 'overview') {
+      this.onShot?.('overview');
+      this.lastShot = 'overview';
+    }
+    this.applyPose(0);
   }
 
   private applyPose(dt: number): void {

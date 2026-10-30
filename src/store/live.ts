@@ -98,15 +98,48 @@ export const useLive = create<LiveStore>((set, get) => ({
 let loopStarted = false;
 let lastPublish = 0;
 
+/**
+ * Catch-up pump: while the runner is behind the broadcast it is advanced in
+ * ~24 ms macrotask slices (MessageChannel), independent of the frame rate.
+ * Driving it from requestAnimationFrame alone left the main thread mostly idle
+ * whenever frames were expensive (heavy compositing, shader compiles), which
+ * stretched the "syncing" phase from seconds to minutes.
+ */
+let pumping = false;
+let pumpPort: MessagePort | null = null;
+function pumpCatchUp(): void {
+  const r = useLive.getState().runner;
+  if (!r || !r.catchingUp || document.visibilityState === 'hidden') {
+    pumping = false;
+    return;
+  }
+  r.tick(Date.now(), 24);
+  const now = performance.now();
+  if (r.catchingUp && now - lastPublish > 120) {
+    lastPublish = now;
+    useLive.setState({ loading: true, progress: r.progress });
+  }
+  pumpPort!.postMessage(0);
+}
+
 /** Global sim loop: advances the active runner and publishes UI snapshots at ~6 Hz. */
 export function startLiveLoop(): void {
   if (loopStarted) return;
   loopStarted = true;
+  if (typeof MessageChannel !== 'undefined') {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = pumpCatchUp;
+    pumpPort = ch.port2;
+  }
   const step = () => {
     const st = useLive.getState();
     const r = st.runner;
     if (r && document.visibilityState !== 'hidden') {
-      const ended = r.tick(Date.now(), st.live ? 8 : 14);
+      if (r.catchingUp && pumpPort && !pumping) {
+        pumping = true;
+        pumpPort.postMessage(0);
+      }
+      const ended = r.tick(Date.now(), st.live ? 8 : 12);
       const now = performance.now();
       if (r.catchingUp) {
         if (now - lastPublish > 120) {

@@ -9,7 +9,7 @@ import { achievements, missions, playerStats, type AchievementState } from '@/de
 import { leaderboardWithYou, userPoints } from '@/demo/leaderboard';
 import { Header } from '@/app/Header';
 import { Card, DriverAvatar, Sparkline } from '@/ui/kit';
-import { IconCheck, IconChevron, IconGift, IconHistory, IconLock, IconSettings, IconStar, IconTrophy, IconWallet } from '@/ui/icons';
+import { IconCheck, IconChevron, IconGift, IconHistory, IconLock, IconPlay, IconSettings, IconStar, IconTrophy, IconWallet } from '@/ui/icons';
 import { fmtNumber, t } from '@/i18n/core';
 import { telegramUser, haptic } from '@/telegram/sdk';
 import { sfx } from '@/audio/sfx';
@@ -50,7 +50,11 @@ export function AchievementsGrid({ list, onOpen }: { list: AchievementState[]; o
     <div className="sc-ach-grid">
       {list.map((a, i) => (
         <Reveal key={a.def.id} i={i}>
-          <button className="sc-ach" data-on={a.unlocked || undefined} data-tone={a.def.tone} onClick={() => onOpen(a)} aria-label={`${t(`scr.ach.${a.def.id}`)}${a.unlocked ? '' : ` — ${t('scr.locked')}`}`}>
+          <button className="sc-ach" data-on={a.unlocked || undefined} data-tone={a.def.tone} onClick={() => {
+              haptic.tap();
+              onOpen(a);
+            }}
+            aria-label={`${t(`scr.ach.${a.def.id}`)}${a.unlocked ? '' : ` — ${t('scr.locked')}`}`}>
             <span className="sc-ach__ic">
               <AchGlyph icon={a.def.icon} size={22} />
               {!a.unlocked && (
@@ -146,6 +150,7 @@ export function ProfileScreen() {
   const claimed = useRewards((s) => s.claimed);
   const fav = useSettings((s) => s.favoriteDriver);
   const push = useNav((s) => s.push);
+  const go = useNav((s) => s.go);
   const you = useYou();
   const [pickOpen, setPickOpen] = useState(false);
   const [ach, setAch] = useState<AchievementState | null>(null);
@@ -176,7 +181,7 @@ export function ProfileScreen() {
               <div className="sc-phero__user muted ellipsis">{you.username ? `@${you.username}` : t('scr.profile.demoAccount')}</div>
               <div className="sc-phero__badges">
                 <span className="sc-lvl">
-                  <span>LVL</span>
+                  <span>{t('scr.profile.lvl')}</span>
                   <b className="num">{lvl.level}</b>
                 </span>
                 <span className="sc-phero__rank num">
@@ -231,6 +236,24 @@ export function ProfileScreen() {
             <span className="sc-stat__k">{t('scr.profile.inPlay')}</span>
           </div>
         </div>
+        {stats.total === 0 && (
+          <button
+            className="sc-starthint"
+            onClick={() => {
+              haptic.tap();
+              go('live');
+            }}
+          >
+            <span className="sc-ic sc-ic--lime">
+              <IconPlay size={18} />
+            </span>
+            <span className="sc-starthint__txt">
+              <b>{t('scr.profile.startTitle')}</b>
+              <span className="muted">{t('scr.profile.startBody')}</span>
+            </span>
+            <IconChevron size={16} className="icon sc-menu__chev" />
+          </button>
+        )}
         {stats.profitSeries.length > 2 && (
           <Card className="sc-spark">
             <div>
@@ -274,7 +297,7 @@ export function ProfileScreen() {
                 </span>
               )}
               <span className="sc-fav__txt">
-                <b className="ellipsis">{favD ? `${favD.firstName} ${favD.lastName}` : t('scr.profile.pickFav')}</b>
+                <b>{favD ? `${favD.firstName} ${favD.lastName}` : t('scr.profile.pickFav')}</b>
                 <span className="muted">{favD ? `${favTeam?.name} · #${favD.number}` : t('scr.profile.favHint')}</span>
               </span>
               {!favD && <IconChevron size={16} />}

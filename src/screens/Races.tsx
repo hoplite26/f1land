@@ -157,7 +157,14 @@ export function RacesScreen() {
           return (
             <div key={m.id} ref={isCurrent ? currentRef : undefined} className="sc-round-wrap" data-st={st}>
               <Reveal i={i % 10}>
-                <RoundRow m={m} status={st} onOpen={() => push({ name: 'meeting', meetingId: m.id })} />
+                <RoundRow
+                  m={m}
+                  status={st}
+                  onOpen={() => {
+                    haptic.tap();
+                    push({ name: 'meeting', meetingId: m.id });
+                  }}
+                />
               </Reveal>
             </div>
           );
@@ -180,9 +187,9 @@ function RoundRow({ m, status, onOpen }: { m: Meeting; status: MeetingStatus; on
       <span className="sc-round__main">
         <span className="sc-round__name">
           <span className="flag">{flagEmoji(m.countryCode)}</span>
-          <span className="ellipsis">{meetingName(m)}</span>
+          <span className="sc-round__nm">{meetingName(m)}</span>
         </span>
-        <span className="sc-round__meta ellipsis">
+        <span className="sc-round__meta">
           {meetingDates(m)} · {meta?.shortName ?? ''}
         </span>
         <span className="sc-round__tags">
@@ -233,10 +240,7 @@ function RaceHero({ m, status, now }: { m: Meeting; status: MeetingStatus; now: 
           <div className="sc-hero__next">
             {focus.live ? (
               <>
-                <span className="badge badge--live">
-                  <span className="dot-live" />
-                  LIVE
-                </span>
+                <span className="badge badge--live">LIVE</span>
                 <b>{t(`session.${focus.s.kind}`)}</b>
               </>
             ) : (
@@ -417,7 +421,15 @@ function MeetingBody({ m }: { m: Meeting }) {
             {(showAll ? results : results.slice(0, 10)).map((r) => {
               const d = DRIVER_BY_ID[r.driverId];
               return (
-                <button key={r.driverId} className="sc-res" data-pos={r.pos} onClick={() => push({ name: 'driver', driverId: r.driverId })}>
+                <button
+                  key={r.driverId}
+                  className="sc-res"
+                  data-pos={r.pos}
+                  onClick={() => {
+                    haptic.tap();
+                    push({ name: 'driver', driverId: r.driverId });
+                  }}
+                >
                   <span className="sc-res__pos num">{r.dnf ? 'DNF' : r.pos}</span>
                   <TeamBar id={r.driverId} />
                   <DriverAvatar id={r.driverId} size={28} />
@@ -491,16 +503,13 @@ function SessionRow({ m, s, now }: { m: Meeting; s: CalendarSession; now: number
           </span>
         )}
         {st === 'live' && (
-          <span className="badge badge--live">
-            <span className="dot-live" />
-            LIVE
-          </span>
+          <span className="badge badge--live">LIVE</span>
         )}
         {st === 'upcoming' && <span className="sc-sess__in num">{t('scr.in', { d: start - now < 86_400_000 ? fmtCountdown(start - now) : fmtDuration(start - now) })}</span>}
         {ch && (
           <button className="sc-sess__watch" onClick={() => watchChannel(ch)} aria-label={`${t('races.watchDemo')}: ${t(`session.${s.kind}`)}`}>
             <IconPlay size={12} />
-            DEMO
+            {t('races.watchDemo')}
           </button>
         )}
       </div>
@@ -595,7 +604,7 @@ function SessionBody({ ch }: { ch: DemoChannel }) {
   const quali = ch.sessionType === 'QUALIFYING' || ch.sessionType === 'SPRINT_QUALIFYING';
   return (
     <>
-      <SubHeader title={ch.title[lang]} onBack={back} />
+      <SubHeader title={meeting ? meetingName(meeting) : ch.title[lang]} onBack={back} />
       <Reveal i={0}>
         <Card glow pad={false} className="sc-sesshero">
           <div className="sc-sesshero__map">
@@ -606,10 +615,7 @@ function SessionBody({ ch }: { ch: DemoChannel }) {
               <span className="sc-pill sc-pill--demo">DEMO</span>
               <span className="sc-hero__round">{t(`session.${ch.sessionType}`)}</span>
               {isActive && live && (
-                <span className="badge badge--live">
-                  <span className="dot-live" />
-                  LIVE
-                </span>
+                <span className="badge badge--live">LIVE</span>
               )}
             </div>
             <div className="sc-hero__name">
@@ -642,12 +648,24 @@ function SessionBody({ ch }: { ch: DemoChannel }) {
       <Reveal i={1} className="section">
         <div className="sc-btnrow sc-btnrow--split">
           {meeting && (
-            <button className="btn btn--ghost" onClick={() => push({ name: 'meeting', meetingId: meeting.id })}>
+            <button
+              className="btn btn--ghost"
+              onClick={() => {
+                haptic.tap();
+                push({ name: 'meeting', meetingId: meeting.id });
+              }}
+            >
               <IconCalendar size={16} />
               {t('scr.races.weekend')}
             </button>
           )}
-          <button className="btn btn--ghost" onClick={() => push({ name: 'circuit', circuitId: ch.circuitId })}>
+          <button
+            className="btn btn--ghost"
+            onClick={() => {
+              haptic.tap();
+              push({ name: 'circuit', circuitId: ch.circuitId });
+            }}
+          >
             <IconMap size={16} />
             {t('races.circuit')}
           </button>
@@ -659,10 +677,17 @@ function SessionBody({ ch }: { ch: DemoChannel }) {
         </div>
         <div className="sc-chlist">
           {CHANNELS.filter((c) => c.id !== ch.id).map((c) => (
-            <button key={c.id} className="sc-ch" onClick={() => push({ name: 'session', channelId: c.id })}>
+            <button
+              key={c.id}
+              className="sc-ch"
+              onClick={() => {
+                haptic.tap();
+                push({ name: 'session', channelId: c.id });
+              }}
+            >
               <CircuitThumb id={c.circuitId} size={40} />
               <span className="sc-ch__txt">
-                <span className="ellipsis">{c.title[lang]}</span>
+                <span>{SEASON_2026.find((m) => m.round === c.meetingRound)?.name[lang] ?? c.title[lang]}</span>
                 <span className="muted">{t(`session.${c.sessionType}`)}</span>
               </span>
               {c.id === activeId && <span className="dot-live" />}

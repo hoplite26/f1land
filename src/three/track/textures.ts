@@ -7,7 +7,8 @@ function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContex
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
-  return [c, c.getContext('2d')!];
+  // Software-backed: drawn once and uploaded (GPU-backed 2D contexts are costly to create).
+  return [c, c.getContext('2d', { willReadFrequently: true })!];
 }
 
 function seeded(seed: number): () => number {

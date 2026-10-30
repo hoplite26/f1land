@@ -3,9 +3,11 @@ import { useWallet, type Entry, type Tx } from '@/store/wallet';
 import { useNav } from '@/store/nav';
 import { useLive } from '@/store/live';
 import { CIRCUIT_META } from '@/data/circuits';
-import { flagEmoji, fmtClock, fmtDate, fmtLap, fmtNumber, getLang, t } from '@/i18n/core';
+import { flagEmoji, fmtClock, fmtDate, fmtGap, fmtLap, fmtNumber, fmtSec, getLang, has, t } from '@/i18n/core';
 import { Header, SubHeader } from '@/app/Header';
-import { poolTexts } from '@/app/poolText';
+import { outcomeLabel, poolTexts } from '@/app/poolText';
+import { usePools } from '@/demo/poolEngine';
+import { oddsText } from '@/ui/bet/parts';
 import { settleFromReplay } from '@/app/sessionService';
 import { Card, Collapsible, Segmented } from '@/ui/kit';
 import { IconChevron, IconClose, IconCoin, IconGift, IconRefund, IconTicket, IconTimer, IconTrophy, IconPlus } from '@/ui/icons';
@@ -74,7 +76,7 @@ export function MyPoolsScreen() {
         onChange={setTab}
         options={[
           { id: 'open', label: t('entries.open'), count: open.length },
-          { id: 'settled', label: t('entries.settled'), count: settled.length },
+          { id: 'settled', label: t('pd.tab.settled'), count: settled.length },
           { id: 'history', label: t('entries.history') },
         ]}
       />
@@ -203,7 +205,7 @@ function EntryCard({ e, onOpen }: { e: Entry; onOpen: () => void }) {
         <div className="ticket__info">
           <div className="ticket__kicker ellipsis">{tx.title}</div>
           <div className="ticket__q clamp-2">{tx.question}</div>
-          <div className="ticket__meta ellipsis">
+          <div className="ticket__meta">
             <span className="ticket__flag">{flagEmoji(meta?.countryCode ?? '')}</span>
             {e.meetingName[lang] || meta?.name} · {fmtDate(e.createdAt, { day: 'numeric', month: 'short' })} {fmtClock(e.createdAt)}
           </div>
@@ -217,7 +219,7 @@ function EntryCard({ e, onOpen }: { e: Entry; onOpen: () => void }) {
       <div className="ticket__stats">
         <div className="ticket__stat ticket__stat--pick">
           <span className="ticket__k">{t('entries.yourPick')}</span>
-          <span className="ticket__v ellipsis">{e.outcomeLabel}</span>
+          <span className="ticket__v">{e.outcomeLabel}</span>
         </div>
         <div className="ticket__stat">
           <span className="ticket__k">{t('entries.stake')}</span>
@@ -237,26 +239,43 @@ function EntryCard({ e, onOpen }: { e: Entry; onOpen: () => void }) {
   );
 }
 
-const VALUE_LABELS: Record<string, string> = {
-  position: 'P',
-  lap_time_ms: 'lap',
-  stop_duration_ms: 'stop',
-  lane_duration_ms: 'lane',
-  sector_time_ms: 'sector',
-};
+const COMPOUNDS = new Set(['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET']);
+const OCCUPANCY = new Set(['ON_TRACK', 'PIT_LANE', 'GARAGE']);
 
+function valueLabel(k: string): string {
+  const key = `pd.val.${k}`;
+  return has(key) ? t(key) : k.replace(/_/g, ' ');
+}
+
+/** Measured settlement values in the user's units: lap times, seconds, gaps, names, compounds. */
 function formatValue(k: string, v: string | number | boolean | null): string {
   if (v === null) return '—';
-  if (typeof v === 'number' && /_ms$/.test(k)) return k.includes('lap') || k.includes('reference') ? fmtLap(v) : `${fmtNumber(v)} ms`;
-  if (typeof v === 'string' && /_at$/.test(k) && !Number.isNaN(Date.parse(v))) return fmtClock(Date.parse(v), true);
-  if (typeof v === 'string' && DRIVER_BY_ID[v]) return DRIVER_BY_ID[v]!.lastName;
-  return String(v);
+  if (typeof v === 'boolean') return v ? t('pd.yes') : t('pd.no');
+  if (typeof v === 'number' && /_ms$/.test(k)) {
+    if (k.includes('lap') || k.includes('reference')) return fmtLap(v);
+    if (k.includes('delta') || k.includes('gap')) return `${fmtGap(v)} ${t('pl.unit.s')}`;
+    return `${fmtSec(v)} ${t('pl.unit.s')}`;
+  }
+  if (typeof v === 'number' && k === 'distance_m') return `${fmtNumber(v)} ${t('pd.unit.m')}`;
+  if (typeof v === 'number' && k.startsWith('position')) return `P${v}`;
+  if (typeof v === 'number') return fmtNumber(v);
+  if (/^\d{4}-\d\d-\d\dT[\d:.]+Z?$/.test(v) && !Number.isNaN(Date.parse(v))) return fmtClock(Date.parse(v), true);
+  if (DRIVER_BY_ID[v]) return DRIVER_BY_ID[v]!.lastName;
+  if (COMPOUNDS.has(v)) return t(`tyre.${v.toLowerCase()}`);
+  if (OCCUPANCY.has(v)) return t(`occ.${v}`);
+  if (/^S[123]$/.test(v)) return t('f1.outcome.sector', { sector: v.slice(1) });
+  if (v === 'PIT') return t('f1.location.pit');
+  if (has(`pd.status.${v}`)) return t(`pd.status.${v}`);
+  return v;
 }
 
 export function EntryScreen({ entryId }: { entryId: string }) {
   const back = useNav((s) => s.back);
   const entry = useWallet((s) => s.entries.find((e) => e.id === entryId));
   const runner = useLive((s) => s.runner);
+  const go = useNav((s) => s.go);
+  const push = useNav((s) => s.push);
+  const poolLive = usePools((s) => s.pools.some((p) => p.pool.pool_id === entry?.poolId));
   const [busy, setBusy] = useState(false);
   const events = useMemo(() => {
     if (!entry?.settlement || !runner || runner.manifest.session_id !== entry.sessionId) return [];
@@ -268,7 +287,22 @@ export function EntryScreen({ entryId }: { entryId: string }) {
     return (
       <div className="mypools">
         <SubHeader onBack={back} title={t('mp.ticket')} />
-        <EmptyState icon={<IconTicket size={34} />} title={t('entries.empty')} />
+        <EmptyState
+          icon={<IconTicket size={34} />}
+          title={t('pd.entryGone')}
+          sub={t('mp.emptyOpenSub')}
+          action={
+            <button
+              className="btn btn--primary"
+              onClick={() => {
+                haptic.impact('light');
+                go('pools');
+              }}
+            >
+              {t('entries.title')}
+            </button>
+          }
+        />
       </div>
     );
   }
@@ -322,7 +356,7 @@ export function EntryScreen({ entryId }: { entryId: string }) {
           </div>
           <div className="xticket__cell">
             <span className="ticket__k">{entry.finalMultiplier !== null ? t('mp.finalMultiplier') : t('mp.estMultiplier')}</span>
-            <span className="xticket__v num cyan">×{mult.toFixed(2)}</span>
+            <span className="xticket__v num cyan">{oddsText(mult)}</span>
           </div>
           <div className="xticket__cell xticket__cell--pay">
             <span className="ticket__k">{entry.state === 'PENDING' ? t('entries.potential') : t('entries.payout')}</span>
@@ -342,6 +376,31 @@ export function EntryScreen({ entryId }: { entryId: string }) {
         </div>
         <div className="xticket__chequer" aria-hidden="true" />
       </div>
+
+      {isActive && (
+        <div className="xticket-actions">
+          {poolLive && (
+            <button
+              className="btn btn--primary"
+              onClick={() => {
+                haptic.impact('light');
+                push({ name: 'pool', channelId: entry.channelId, poolId: entry.poolId });
+              }}
+            >
+              {t('pd.toPool')}
+            </button>
+          )}
+          <button
+            className={`btn ${poolLive ? 'btn--ghost' : 'btn--primary'}`}
+            onClick={() => {
+              haptic.impact('light');
+              go('live');
+            }}
+          >
+            {t('pd.watch')}
+          </button>
+        </div>
+      )}
 
       {!s && entry.state === 'PENDING' && !isActive && (
         <Card className="mt xticket-await">
@@ -371,9 +430,7 @@ export function EntryScreen({ entryId }: { entryId: string }) {
             <div className="proof__title">{t('entries.proof')}</div>
             {winner && (
               <ProofRow k={t('entries.winner')}>
-                <b className="lime">
-                  {t(winner.label_key, Object.fromEntries(Object.entries(winner.label_params ?? {}).map(([k, v]) => [k, typeof v === 'string' && DRIVER_BY_ID[v] ? DRIVER_BY_ID[v]!.lastName : v])))}
-                </b>
+                <b className="lime">{outcomeLabel(winner, entry.pool.market_id)}</b>
               </ProofRow>
             )}
             {s.void_reason && (
@@ -401,7 +458,7 @@ export function EntryScreen({ entryId }: { entryId: string }) {
             <div className="values">
               {Object.entries(s.normalized_values).map(([k, v]) => (
                 <div key={k} className="values__row">
-                  <span className="muted">{VALUE_LABELS[k] ?? k.replace(/_/g, ' ')}</span>
+                  <span className="muted">{valueLabel(k)}</span>
                   <span className="num values__v">{formatValue(k, v)}</span>
                 </div>
               ))}
@@ -435,14 +492,17 @@ export function EntryScreen({ entryId }: { entryId: string }) {
                 <span className="badge badge--yellow">{t('entries.corrected')}</span>
               </div>
               <div className="values">
-                {entry.settlementHistory.map((h: Settlement) => (
-                  <div key={h.settlement_revision} className="values__row">
-                    <span className="muted">
-                      {t('entries.prevValue')} · #{h.settlement_revision}
-                    </span>
-                    <span className="num values__v">{h.winner_outcome_id ?? h.void_reason}</span>
-                  </div>
-                ))}
+                {entry.settlementHistory.map((h: Settlement) => {
+                  const o = h.winner_outcome_id ? entry.pool.outcomes.find((x) => x.id === h.winner_outcome_id) : null;
+                  return (
+                    <div key={h.settlement_revision} className="values__row">
+                      <span className="muted">
+                        {t('entries.prevValue')} · #{h.settlement_revision}
+                      </span>
+                      <span className="values__v">{o ? outcomeLabel(o, entry.pool.market_id) : h.void_reason ? t(`f1.void.${h.void_reason.toLowerCase()}`) : '—'}</span>
+                    </div>
+                  );
+                })}
               </div>
             </Card>
           )}

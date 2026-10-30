@@ -25,6 +25,11 @@ export default {
     'lv.tag.red': 'КРАСНЫЙ',
     'lv.tag.fastest': 'ЛУЧШИЙ КРУГ',
     'lv.tag.battle': 'БОРЬБА',
+    'lv.sync.hint': 'Догоняем прямой эфир — это займёт несколько секунд',
+    'lv.sync.buildHint': 'Собираем 3D-сцену — данные гонки уже идут',
+    'lv.pools.loading': 'Загружаем пулы гонки…',
+    'lv.pools.emptyHint': 'Новые пулы открываются по ходу гонки — обычно каждые пару минут.',
+    'lv.empty.timing': 'Хронометраж появится после синхронизации',
 
     'pl.title.m01': 'Позиция на круге',
     'pl.title.m02': 'Дуэль в хронометраже',
@@ -171,6 +176,11 @@ export default {
     'lv.tag.red': 'RED FLAG',
     'lv.tag.fastest': 'FASTEST LAP',
     'lv.tag.battle': 'BATTLE',
+    'lv.sync.hint': 'Catching up with the live feed — just a few seconds',
+    'lv.sync.buildHint': 'Building the 3D scene — race data is already flowing',
+    'lv.pools.loading': 'Loading race pools…',
+    'lv.pools.emptyHint': 'New pools open as the race unfolds — usually every couple of minutes.',
+    'lv.empty.timing': 'Timing appears once the feed is synced',
 
     'pl.title.m01': 'Lap position',
     'pl.title.m02': 'Timing duel',

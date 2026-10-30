@@ -12,6 +12,7 @@ import type { F1CarModel, ModelQuality, RoadCarModel, TyreLetter } from '@/three
 import { createCarShadow, createF1Car, createRoadCar } from '@/three/models/cars';
 import { buildTrackMeshes, toWorld, yawFromHeading, type TrackMeshes } from '@/three/track/trackMesh';
 import { buildEnvironment, type EnvironmentHandle } from '@/three/track/environment';
+import { NeonTrace } from '@/three/track/neonTrace';
 import { createSkyDome, type PropsAtmosphere } from '@/three/models/props';
 import { CameraRig, type CameraMode, type CameraSubject } from './cameraRig';
 import { Beacon, MotionTrail, ParticleSystem, SelectionRing, Shockwaves } from './effects';
@@ -61,6 +62,8 @@ export class RaceScene {
   private model: TrackModel | null = null;
   private track: TrackMeshes | null = null;
   private env: EnvironmentHandle | null = null;
+  private trace: NeonTrace | null = null;
+  private fogBase = 0;
   private cars = new Map<string, CarEntry>();
   private sc: RoadCarModel | null = null;
   private frames: SimFrame[] = [];
@@ -101,6 +104,7 @@ export class RaceScene {
   private lastFrameT = -1;
   private fireworksUntil = 0;
   private resizeObs: ResizeObserver;
+  private insets = { top: 0, bottom: 0 };
 
   constructor(container: HTMLElement, opts: SceneOptions) {
     this.container = container;
@@ -114,6 +118,8 @@ export class RaceScene {
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = q === 'high';
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Info-log checks force a synchronous wait on every shader compile; keep them for development only.
+    this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
     // Stats cover the whole frame (scene + post passes); reset manually in render().
     this.renderer.info.autoReset = false;
     const canvas = this.renderer.domElement;
@@ -159,6 +165,8 @@ export class RaceScene {
     onProgress?.(0.05);
     this.track = buildTrackMeshes(circuit, model, q);
     this.scene.add(this.track.group);
+    this.trace = new NeonTrace(model.track, circuit, q);
+    this.scene.add(this.trace.mesh);
     onProgress?.(0.25);
     await tick();
     if (this.disposed) return;
@@ -188,6 +196,14 @@ export class RaceScene {
     this.rig.onShot = (shot) => this.labels.setShot(shot);
     this.labels.setShot(this.rig.currentShot);
     this.setupPost();
+    onProgress?.(0.97);
+    // Compile all programs up front (in parallel where KHR_parallel_shader_compile exists) so the first frames do not stall.
+    try {
+      await this.renderer.compileAsync(this.scene, this.rig.camera);
+    } catch {
+      /* falls back to lazy compilation on first render */
+    }
+    if (this.disposed) return;
     onProgress?.(1);
   }
 
@@ -224,6 +240,7 @@ export class RaceScene {
     // Exponential haze: about 50% at ~1.4× the circuit extent, never fully opaque near the action.
     const density = Math.min(atm.fogDensity, 0.85 / Math.max(800, extent * 1.4));
     this.scene.fog = new THREE.FogExp2(atm.fogColor, density);
+    this.fogBase = density;
     this.scene.background = atm.fogColor.clone();
     this.setupEnvMap(atm, tod);
   }
@@ -462,6 +479,12 @@ export class RaceScene {
     if (ip) this.applyFrames(ip.a, ip.b, ip.k, dt);
     const subject = this.subject();
     this.rig.update(dt, subject, this.model?.track ?? null, this.clockT);
+    if (this.trace) {
+      this.trace.update(this.rig.camera, this.container.clientHeight, dt, this.selectedZone, this.zoneVisible, this.opts.reducedMotion);
+      // High cameras look through kilometres of haze: thin it out so the circuit keeps its contrast.
+      const fog = this.scene.fog;
+      if (fog instanceof THREE.FogExp2) fog.density = this.fogBase * (1 - 0.75 * this.trace.fade);
+    }
     this.updateMarkers();
     this.updateZones(dt);
     this.ringA.update(dt, this.followId ? this.cars.get(this.followId)?.pos ?? null : null, this.opts.reducedMotion);
@@ -684,6 +707,15 @@ export class RaceScene {
     this.renderer.setSize(w, h, false);
     this.composer?.setSize(w, h);
     this.rig.resize(w / h);
+    this.rig.setInsets(this.insets.top, this.insets.bottom, h);
+  }
+
+  /** Canvas px covered by screen UI at the top / bottom (framing and label placement avoid them). */
+  setInsets(top: number, bottom: number): void {
+    this.insets.top = top;
+    this.insets.bottom = bottom;
+    this.labels.setInsets(top, bottom);
+    this.rig.setInsets(top, bottom, this.container.clientHeight);
   }
 
   dispose(): void {
@@ -704,6 +736,7 @@ export class RaceScene {
     this.beaconA.dispose();
     this.beaconB.dispose();
     this.track?.dispose();
+    this.trace?.dispose();
     this.env?.dispose();
     this.ringA.dispose();
     this.ringB.dispose();
@@ -734,7 +767,7 @@ function markerTexture(color: string): THREE.Texture {
   const c = document.createElement('canvas');
   c.width = 64;
   c.height = 64;
-  const g = c.getContext('2d')!;
+  const g = c.getContext('2d', { willReadFrequently: true })!;
   g.fillStyle = 'rgba(0,0,0,0.55)';
   g.beginPath();
   g.arc(32, 32, 26, 0, Math.PI * 2);

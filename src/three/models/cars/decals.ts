@@ -36,10 +36,11 @@ export function createCanvas(w: number, h: number): { canvas: AnyCanvas; ctx: Ct
     const c = document.createElement('canvas');
     c.width = w;
     c.height = h;
-    return { canvas: c, ctx: c.getContext('2d')! };
+    // Software-backed: procedural textures are drawn once and uploaded; GPU-backed 2D contexts are costly to create.
+    return { canvas: c, ctx: c.getContext('2d', { willReadFrequently: true })! };
   }
   const c = new OffscreenCanvas(w, h);
-  return { canvas: c, ctx: c.getContext('2d')! };
+  return { canvas: c, ctx: c.getContext('2d', { willReadFrequently: true })! };
 }
 
 type Px = [number, number, number, number];

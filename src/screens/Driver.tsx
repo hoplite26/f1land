@@ -212,7 +212,10 @@ function DriverBody({ d }: { d: Driver }) {
                 const m = getMeeting(f.meetingId);
                 const tone = f.dnf ? 'dnf' : f.pos === 1 ? 'win' : f.pos <= 3 ? 'pod' : f.pos <= 10 ? 'pts' : 'out';
                 return (
-                  <button key={f.meetingId} className="sc-form__chip" data-tone={tone} onClick={() => push({ name: 'meeting', meetingId: f.meetingId })} aria-label={`${m.name[getLang()]}: ${f.dnf ? 'DNF' : `P${f.pos}`}`}>
+                  <button key={f.meetingId} className="sc-form__chip" data-tone={tone} onClick={() => {
+                    haptic.tap();
+                    push({ name: 'meeting', meetingId: f.meetingId });
+                  }} aria-label={`${m.name[getLang()]}: ${f.dnf ? 'DNF' : `P${f.pos}`}`}>
                     <b className="num">{f.dnf ? 'DNF' : `P${f.pos}`}</b>
                     <span>{flagEmoji(m.countryCode)}</span>
                   </button>
@@ -270,7 +273,13 @@ function DriverBody({ d }: { d: Driver }) {
             </div>
           </div>
           {mate && (
-            <button className="sc-mate" onClick={() => push({ name: 'driver', driverId: mate.id })}>
+            <button
+              className="sc-mate"
+              onClick={() => {
+                haptic.tap();
+                push({ name: 'driver', driverId: mate.id });
+              }}
+            >
               <DriverAvatar id={mate.id} size={36} />
               <span className="sc-mate__txt">
                 <span className="muted">{t('scr.driver.teammate')}</span>

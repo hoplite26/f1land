@@ -3,6 +3,8 @@
 //   node dev/shot-scene.mjs --dir /tmp/verify/c --quality high --channel ae-gp \
 //     --shots "director:8000,follow:4000,tv:4000,heli:4000,onboard:4000,overview:4000" [--prefix ae-] [--full]
 //   Each shot: <camera>:<waitMs>[:<js to eval before waiting>]. Prints renderer.info per shot.
+//   --lang en, --render 2d, --motion reduced (cameras snap to their poses: framing checks on slow SwiftShader), --sync (print time until the live feed is synced), --early <ms> (one shot before sync).
+//   Rendering is paused while a screenshot is captured (SwiftShader frames can otherwise starve the capture).
 import { chromium } from '@playwright/test';
 const a = process.argv.slice(2);
 const arg = (k, d) => { const i = a.indexOf('--' + k); return i >= 0 ? (a[i + 1]?.startsWith('--') || a[i + 1] === undefined ? true : a[i + 1]) : d; };
@@ -15,16 +17,37 @@ page.setDefaultTimeout(240000);
 const errs = [];
 page.on('pageerror', (e) => errs.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error' || m.text().startsWith('[scene]')) errs.push('console: ' + m.text()); });
-const retry = async (fn) => { for (let i = 0; ; i++) { try { return await fn(); } catch (e) { if (i > 4) throw e; await page.waitForTimeout(3000); } } };
+const retry = async (fn) => { for (let i = 0; ; i++) { try { return await fn(); } catch (e) { if (i > 12) throw e; await page.waitForTimeout(3000); } } };
 console.log("goto"); await page.goto(arg('url', 'http://localhost:5173/'));
 await page.waitForLoadState('networkidle').catch(() => {});
-await retry(() => page.evaluate(({ quality }) => {
-  localStorage.setItem('pa-f1-settings', JSON.stringify({ state: { lang: 'ru', quality, motion: 'full', haptics: true, sound: false, renderMode: '3d', camera: 'director', showZones: true, favoriteDriver: null, onboarded: true }, version: 1 }));
-}, { quality }));
+await retry(() => page.evaluate(({ quality, lang, renderMode, motion }) => {
+  localStorage.setItem('pa-f1-settings', JSON.stringify({ state: { lang, quality, motion, haptics: true, sound: false, renderMode, camera: 'director', showZones: true, favoriteDriver: null, onboarded: true }, version: 1 }));
+}, { quality, lang: arg('lang', 'ru'), renderMode: arg('render', '3d'), motion: arg('motion', 'full') }));
 await page.reload();
 await page.waitForLoadState('networkidle').catch(() => {});
 await page.waitForTimeout(1500);
 await retry(() => page.evaluate(() => window.__nav.getState().go('live')));
+const t0 = Date.now();
+const hold = (on) => page.evaluate((on) => {
+  const s = window.__scene;
+  if (!s) return;
+  if (on && !s.__held) { s.__held = s.render; s.render = () => {}; }
+  if (!on && s.__held) { s.render = s.__held; delete s.__held; }
+}, on).catch(() => {});
+const capture = async (out) => {
+  await hold(true);
+  await page.waitForTimeout(400);
+  const host = arg('full') ? null : await page.$('.scene-host');
+  if (host) await host.screenshot({ path: out, timeout: 240000 });
+  else await page.screenshot({ path: out, timeout: 240000 });
+  await hold(false);
+};
+const early = arg('early');
+if (early) { await page.waitForTimeout(+early); await capture(`${dir}/${prefix}early.png`); console.log('early shot', (Date.now() - t0) / 1000, 's'); }
+if (arg('sync')) {
+  await page.waitForFunction(() => { const l = window.__live?.getState(); return l && l.live && !l.loading; }, null, { timeout: 600000, polling: 500 });
+  console.log('synced after', (Date.now() - t0) / 1000, 's');
+}
 const ch = arg('channel');
 if (ch) { await page.waitForTimeout(800); await page.evaluate((id) => window.__live.getState().open(id), ch); }
 const pre = arg('eval');
@@ -36,9 +59,7 @@ for (const spec of shots) {
   if (js.length) await page.evaluate(js.join(':'));
   await page.waitForTimeout(+(wait ?? 4000));
   console.log('shooting', cam); const out = `${dir}/${prefix}${cam}.png`;
-  const host = arg('full') ? null : await page.$('.scene-host');
-  if (host) await host.screenshot({ path: out, timeout: 240000 });
-  else await page.screenshot({ path: out, timeout: 240000 });
+  await capture(out);
   const info = await page.evaluate(() => {
     const s = window.__scene;
     if (!s) return null;

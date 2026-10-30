@@ -212,7 +212,13 @@ export function SettingsScreen() {
           </span>
           <p>{t('scr.settings.resetBody')}</p>
           <div className="sc-btnrow sc-btnrow--split">
-            <button className="btn btn--ghost" onClick={() => setConfirm(false)}>
+            <button
+              className="btn btn--ghost"
+              onClick={() => {
+                haptic.tap();
+                setConfirm(false);
+              }}
+            >
               {t('ui.cancel')}
             </button>
             <button className="btn sc-btn-danger" onClick={reset}>

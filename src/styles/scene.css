@@ -188,18 +188,19 @@
 
 .cam-tag {
   position: absolute;
-  left: 14px;
-  top: calc(var(--safe-top, 0px) + 78px);
+  left: 12px;
+  /* Live sets --lv-cam-top below its timing strip / flag row so the tag never sits under them. */
+  top: var(--lv-cam-top, calc(var(--safe-top, 0px) + 78px));
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 3px 9px 3px 7px;
   border-radius: 999px;
-  background: rgba(6, 10, 13, 0.6);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-  color: rgba(241, 245, 247, 0.85);
-  font: 600 9.5px/14px var(--font-num, 'Chakra Petch', monospace);
-  letter-spacing: 0.16em;
+  background: rgba(6, 10, 13, 0.74);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  color: rgba(241, 245, 247, 0.94);
+  font: 600 10.5px/16px var(--font-num, 'Chakra Petch', monospace);
+  letter-spacing: 0.14em;
   pointer-events: none;
 }
 .cam-tag__dot {

@@ -46,6 +46,8 @@ export class LabelLayer {
   private placed: Array<{ x: number; y: number }> = [];
   private seen = new Set<string>();
   private sorted: LabelTarget[] = [];
+  private insetTop = 0;
+  private insetBottom = 0;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -63,6 +65,11 @@ export class LabelLayer {
     delete this.fx.dataset.fx;
     void this.fx.offsetWidth;
     this.fx.dataset.fx = kind;
+  }
+
+  setInsets(top: number, bottom: number): void {
+    this.insetTop = top;
+    this.insetBottom = bottom;
   }
 
   setPositions(map: Map<string, number>): void {
@@ -121,9 +128,10 @@ export class LabelLayer {
     sorted.sort((a, b) => PRIORITY[a.kind] - PRIORITY[b.kind]);
     for (const t of sorted) {
       if (!this.project(t.pos, t.kind === 'sc' ? 2.4 : 1.9, camera, w, h)) continue;
-      const x = this.v.x;
+      // Anchors off screen or under the screen UI get no label; the rest stay fully inside the frame.
+      if (this.v.x < 0 || this.v.x > w || this.v.y < this.insetTop + 24 || this.v.y > h - this.insetBottom + 10) continue;
+      const x = Math.min(w - 40, Math.max(40, this.v.x));
       const y = this.v.y;
-      if (x < -60 || x > w + 60 || y < -40 || y > h + 40) continue;
       // Declutter: stack upwards over already placed labels.
       let stem = 14;
       for (let k = 0; k < 4; k++) {
@@ -168,12 +176,13 @@ export class LabelLayer {
     for (let i = 0; i < this.zoneEls.length; i++) {
       const el = this.zoneEls[i]!;
       const z = zones?.[i];
-      if (!z || !this.project(z.pos, 0, camera, w, h) || this.v.x < -40 || this.v.x > w + 40 || this.v.y < -30 || this.v.y > h + 30) {
+      if (!z || !this.project(z.pos, 0, camera, w, h) || this.v.x < 0 || this.v.x > w || this.v.y < this.insetTop + 12 || this.v.y > h - this.insetBottom) {
         if (el.style.display !== 'none') el.style.display = 'none';
         continue;
       }
       el.style.display = '';
-      el.style.transform = `translate3d(${this.v.x.toFixed(1)}px, ${this.v.y.toFixed(1)}px, 0)`;
+      const zx = Math.min(w - 22, Math.max(22, this.v.x));
+      el.style.transform = `translate3d(${zx.toFixed(1)}px, ${this.v.y.toFixed(1)}px, 0)`;
       const sel = selectedZone === z.sector ? 'true' : selectedZone ? 'dim' : 'false';
       if (el.dataset.selected !== sel) el.dataset.selected = sel;
     }
