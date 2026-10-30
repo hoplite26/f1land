@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DRIVER_BY_ID, TEAM_BY_ID } from '@/data/teams';
+import { t as tr } from '@/i18n/core';
 import type { CameraShot } from './cameraRig';
 
 export type LabelKind = 'follow' | 'rival' | 'near' | 'sc';
@@ -15,16 +16,6 @@ export interface ZoneTag {
   pos: THREE.Vector3;
 }
 
-const SHOT_NAMES: Record<CameraShot, string> = {
-  follow: 'CHASE CAM',
-  tv: 'TV CAM',
-  heli: 'HELI CAM',
-  onboard: 'ONBOARD',
-  front: 'FRONT CAM',
-  side: 'TRACKING',
-  orbit: 'FREE CAM',
-  overview: 'OVERVIEW',
-};
 const PRIORITY: Record<LabelKind, number> = { follow: 0, sc: 1, rival: 2, near: 3 };
 
 /**
@@ -72,7 +63,7 @@ export class LabelLayer {
   /** Broadcast tag ("TV CAM", "ONBOARD"…) — fades in on every cut. */
   setShot(shot: CameraShot): void {
     const name = this.camTag.lastElementChild as HTMLElement;
-    name.textContent = SHOT_NAMES[shot] ?? shot.toUpperCase();
+    name.textContent = tr(`scene3d.cam.${shot}`);
     this.camTag.classList.remove('cam-tag--cut');
     window.clearTimeout(this.camTimer);
     // Restart the cut animation.
@@ -87,7 +78,7 @@ export class LabelLayer {
       el = document.createElement('div');
       if (kind === 'sc') {
         el.className = 'car-label car-label--sc';
-        el.innerHTML = '<span class="car-label__code">SAFETY CAR</span>';
+        el.innerHTML = '<span class="car-label__code"></span>';
       } else {
         const d = DRIVER_BY_ID[id];
         const team = d ? TEAM_BY_ID[d.teamId] : undefined;
@@ -148,6 +139,11 @@ export class LabelLayer {
         const pos = this.positions.get(t.id);
         const pe = el.firstElementChild as HTMLElement;
         const txt = pos ? String(pos) : '';
+        if (pe.textContent !== txt) pe.textContent = txt;
+      } else {
+        // Text label always present for SC (F1-051); follows the UI language.
+        const pe = el.firstElementChild as HTMLElement;
+        const txt = tr(t.id === '__med' ? 'scene3d.medical' : 'scene3d.sc');
         if (pe.textContent !== txt) pe.textContent = txt;
       }
     }

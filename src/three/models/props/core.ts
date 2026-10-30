@@ -16,13 +16,112 @@ import type { TimeOfDay } from '@/data/circuits/types';
 /* Global prop uniforms                                                */
 /* ------------------------------------------------------------------ */
 
+/** 1×1 "fully lit" site map used until a circuit bakes its own (no night falloff). */
+const BLANK_SITE = new THREE.DataTexture(new Uint8Array([0, 255, 0, 255]), 1, 1);
+BLANK_SITE.needsUpdate = true;
+
 export const PROP_UNIFORMS = {
   uTime: { value: 0 },
-  /** 0 = day, ~0.55 = dusk, 1 = night. Scales night-only glow (windows, lamps, halos). */
+  /** 0 = day, ~0.85 = dusk (blue hour), 1 = night. Scales night-only glow (windows, lamps, halos). */
   uNight: { value: 0 },
+  /**
+   * Baked circuit site map (see track/site.ts), sampled in world XZ:
+   * r = track proximity, g = night light (floodlight pools), b = paved ground, a = city light.
+   */
+  uSiteMap: { value: BLANK_SITE as THREE.Texture },
+  /** xy = world XZ of the map origin, zw = 1 / world size. */
+  uSiteRect: { value: new THREE.Vector4(0, 0, 1, 1) },
+  /** Strength of the night light falloff (0 = off, 1 = full night). */
+  uSiteNight: { value: 0 },
 };
 
-const NIGHT_LEVEL: Record<TimeOfDay, number> = { day: 0, dusk: 0.55, night: 1 };
+/** Restores the neutral site map (no night falloff); called when a circuit environment is disposed. */
+export function resetSiteMap(): void {
+  PROP_UNIFORMS.uSiteMap.value = BLANK_SITE;
+  PROP_UNIFORMS.uSiteRect.value.set(0, 0, 1, 1);
+  PROP_UNIFORMS.uSiteNight.value = 0;
+}
+
+/**
+ * GLSL for the baked night lighting. Surfaces away from floodlights fall to
+ * `dark` × albedo, lit areas get a warm emissive pool — one texture fetch, no
+ * real lights. Inject into lit (Lambert / Standard) materials with `injectSiteLight`.
+ */
+const SITE_VERT_PARS = /* glsl */ `varying vec2 vSiteXZ;`;
+const SITE_VERT = /* glsl */ `
+{
+  vec4 siteW = vec4(transformed, 1.0);
+#ifdef USE_INSTANCING
+  siteW = instanceMatrix * siteW;
+#endif
+  vSiteXZ = (modelMatrix * siteW).xz;
+}`;
+export const SITE_FRAG_PARS = /* glsl */ `
+varying vec2 vSiteXZ;
+uniform sampler2D uSiteMap;
+uniform vec4 uSiteRect;
+uniform float uSiteNight;
+vec4 siteSample() { return texture2D(uSiteMap, (vSiteXZ - uSiteRect.xy) * uSiteRect.zw); }`;
+
+export interface SiteLightOptions {
+  /** Albedo multiplier far from any light at full night (default 0.13). */
+  dark?: number;
+  /** Warm emissive gain inside light pools (default 0.32). */
+  pool?: number;
+  /** Extra GLSL run after the falloff (has `siteS` = map sample, `siteK` = night strength). */
+  extra?: string;
+  /** Fragment line after which the falloff is inserted (default the emissive map include). */
+  anchor?: string;
+}
+
+function siteApply(o: SiteLightOptions): string {
+  const dark = (o.dark ?? 0.13).toFixed(3);
+  const pool = (o.pool ?? 0.32).toFixed(3);
+  return /* glsl */ `
+{
+  vec4 siteS = siteSample();
+  float siteK = uSiteNight;
+  float siteLit = siteS.g;
+  diffuseColor.rgb *= mix(1.0, mix(${dark}, 1.0, siteLit), siteK);
+  totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.9, 0.78) * (siteLit * siteLit * ${pool} * siteK);
+  ${o.extra ?? ''}
+}`;
+}
+
+/**
+ * Patches a Lambert/Standard/Phong shader (inside onBeforeCompile) with the
+ * baked site lighting, applied after `o.anchor` (default: after the emissive
+ * map include, where `diffuseColor` and `totalEmissiveRadiance` exist).
+ */
+export function injectSiteLight(shader: THREE.WebGLProgramParametersWithUniforms, o: SiteLightOptions = {}): void {
+  shader.uniforms.uSiteMap = PROP_UNIFORMS.uSiteMap;
+  shader.uniforms.uSiteRect = PROP_UNIFORMS.uSiteRect;
+  shader.uniforms.uSiteNight = PROP_UNIFORMS.uSiteNight;
+  if (!shader.vertexShader.includes('varying vec2 vSiteXZ;')) {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${SITE_VERT_PARS}`)
+      .replace('#include <project_vertex>', `#include <project_vertex>\n${SITE_VERT}`);
+  }
+  if (!shader.fragmentShader.includes('uniform sampler2D uSiteMap;')) {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${SITE_FRAG_PARS}`);
+  }
+  const anchor = o.anchor ?? '#include <emissivemap_fragment>';
+  shader.fragmentShader = shader.fragmentShader.replace(anchor, `${anchor}\n${siteApply(o)}`);
+}
+
+/** Convenience: material whose shader gets the site lighting (chains an existing onBeforeCompile). */
+export function withSiteLight<T extends THREE.Material>(mat: T, key: string, o: SiteLightOptions = {}): T {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader, renderer) => {
+    prev.call(mat, shader, renderer);
+    injectSiteLight(shader, o);
+  };
+  const prevKey = mat.customProgramCacheKey.bind(mat);
+  mat.customProgramCacheKey = () => `${prevKey()}|site|${key}`;
+  return mat;
+}
+
+const NIGHT_LEVEL: Record<TimeOfDay, number> = { day: 0, dusk: 0.85, night: 1 };
 
 export function nightLevel(tod: TimeOfDay): number {
   return NIGHT_LEVEL[tod];
@@ -590,9 +689,12 @@ uniform float uNight;`,
     fs = fs.replace(
       '#include <emissivemap_fragment>',
       `#include <emissivemap_fragment>
-totalEmissiveRadiance += diffuseColor.rgb * (vGlow.x + vGlow.y * uNight);`,
+totalEmissiveRadiance += diffuseColor.rgb * (vGlow.x + vGlow.y * uNight);
+//#site`,
     );
     shader.fragmentShader = fs;
+    // Night falloff after the glow so lit windows / LEDs keep their full brightness.
+    injectSiteLight(shader, { anchor: '//#site' });
   };
   mat.customProgramCacheKey = () => key;
 }

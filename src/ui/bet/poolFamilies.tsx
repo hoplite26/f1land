@@ -156,6 +156,8 @@ export function OutcomeGrid({
   const locked = pool.status !== 'OPEN';
   const winner = pool.status === 'SETTLED' ? pool.settlement?.winner_outcome_id ?? null : null;
   const oddsOf = (id: string) => (locked && lp.book.finalMultipliers?.[id] ? lp.book.finalMultipliers[id]! : multiplier(lp.book, id, value === id ? stake : 0));
+  const bookTotal = Object.values(lp.book.stakes).reduce((x, y) => x + y, 0);
+  const shareOf = (id: string) => (bookTotal > 0 ? (lp.book.stakes[id] ?? 0) / bookTotal : null);
   const tile = (s: TileSpec) => (
     <OutcomeTile
       key={s.o.id}
@@ -165,6 +167,7 @@ export function OutcomeGrid({
       icon={s.icon}
       color={s.color}
       odds={oddsOf(s.o.id)}
+      share={s.variant === 'row' ? null : shareOf(s.o.id)}
       checked={value === s.o.id}
       disabled={disabled}
       mine={myPicks.has(s.o.id)}

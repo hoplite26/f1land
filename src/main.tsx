@@ -15,7 +15,10 @@ import { HistoryScreen } from '@/screens/History';
 import { SettingsScreen, useApplySettings } from '@/screens/Settings';
 import { Onboarding } from '@/screens/Onboarding';
 import { SceneHost } from '@/app/SceneHost';
-import { startSessionService } from '@/app/sessionService';
+import { getEngine, startSessionService } from '@/app/sessionService';
+import { CATALOG } from '@/domain/markets/catalog';
+import type { MarketId } from '@/domain/types';
+import { useWallet } from '@/store/wallet';
 import { useLive, startLiveLoop } from '@/store/live';
 import { useNav, currentRoute, type Route } from '@/store/nav';
 import { usePools } from '@/demo/poolEngine';
@@ -40,8 +43,17 @@ initTelegram();
 startSessionService();
 startLiveLoop();
 void useLive.getState().open(useLive.getState().channelId);
-// Dev-only handles for scripted screenshots and debugging.
-if (import.meta.env.DEV) Object.assign(window, { __nav: useNav, __live: useLive, __settings: useSettings });
+// Store handles for scripted screenshots, debugging and Playwright: dev server and VITE_E2E=1 builds only.
+if (import.meta.env.DEV || import.meta.env.VITE_E2E === '1') {
+  Object.assign(window, {
+    __nav: useNav,
+    __live: useLive,
+    __settings: useSettings,
+    __wallet: useWallet,
+    __engine: getEngine,
+    __family: (id: string) => CATALOG[id as MarketId]?.family,
+  });
+}
 
 function routeContent(route: Route) {
   switch (route.name) {

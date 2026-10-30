@@ -3,4 +3,4 @@ export { createRoadCar, roadCarStats, roadCarDimensions } from './roadCar';
 export { createCarShadow } from './shadow';
 export { TYRE_COLORS } from './decals';
 export { HIGHLIGHT_COLOR } from './materials';
-export { createRaceEnvironment } from './environment';
+export { createRaceEnvironment, createCarEnvironment } from './environment';

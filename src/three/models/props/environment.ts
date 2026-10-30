@@ -32,6 +32,10 @@ export interface PropsAtmosphere {
   stars: number;
   /** Suggested renderer.toneMappingExposure. */
   exposure: number;
+  /** Horizon-glow azimuth when it differs from the key light (blue hour). */
+  glowDirection?: THREE.Vector3;
+  /** Cloud amount 0..1 painted in the sky dome. */
+  clouds?: number;
 }
 
 /** Recommended sky/fog/light settings for a circuit's theme and time of day. */
@@ -40,59 +44,67 @@ export function getAtmosphere(tod: TimeOfDay, theme: EnvironmentTheme): PropsAtm
   const city = theme === 'street';
   const c = (h: string) => new THREE.Color(h);
   if (tod === 'day') {
+    // Cinematic afternoon: deep zenith, hazy horizon, warm low-ish sun for long shadows.
     return {
-      skyTop: c(desert ? '#3f86d6' : '#2f74d0'),
-      skyHorizon: c(desert ? '#e9dcc0' : theme === 'forest' ? '#c6dbe9' : '#cfe3f3'),
-      skyGround: c(desert ? '#cdb790' : '#9fb1a0'),
-      glow: c('#fff1d0'),
-      glowStrength: desert ? 0.25 : 0.1,
-      fogColor: c(desert ? '#e2d6bd' : '#c9dbe8'),
-      fogDensity: desert ? 0.00055 : 0.00042,
-      sunDirection: new THREE.Vector3(0.45, 0.78, 0.35).normalize(),
-      sunColor: c('#fff3dd'),
-      sunIntensity: 2.6,
-      hemiSky: c('#d7e8ff'),
-      hemiGround: c(desert ? '#b8986a' : '#5d6b4a'),
-      hemiIntensity: 1.25,
+      skyTop: c(desert ? '#2a6fc4' : '#1f5fb6'),
+      skyHorizon: c(desert ? '#e6d8bc' : theme === 'forest' ? '#c2d6e2' : '#c4d8e8'),
+      skyGround: c(desert ? '#b9a27c' : '#7d8a7c'),
+      glow: c('#ffe6bf'),
+      glowStrength: desert ? 0.3 : 0.16,
+      fogColor: c(desert ? '#d8cbb0' : theme === 'forest' ? '#b4c7d2' : '#b9cddd'),
+      fogDensity: desert ? 0.0005 : 0.00042,
+      sunDirection: new THREE.Vector3(0.52, 0.6, 0.6).normalize(),
+      sunColor: c('#fff0d8'),
+      sunIntensity: 2.9,
+      hemiSky: c('#cfe0ff'),
+      hemiGround: c(desert ? '#a88f68' : city ? '#6c6a66' : '#4f5c3e'),
+      hemiIntensity: 1.1,
       stars: 0,
-      exposure: 1.0,
+      exposure: 0.96,
+      clouds: theme === 'desert' ? 0.35 : theme === 'forest' || theme === 'dunes' ? 0.8 : 0.6,
     };
   }
   if (tod === 'dusk') {
+    // Blue hour (Yas Marina twilight race): indigo zenith, ember band on the western
+    // horizon, floodlights doing the work. Key light comes from above (floodlights),
+    // the horizon glow uses its own direction.
     return {
-      skyTop: c('#24306e'),
-      skyHorizon: c('#ff9a5c'),
-      skyGround: c('#3a2f3a'),
-      glow: c('#ff6a3d'),
-      glowStrength: 0.65,
-      fogColor: c('#b07a6a'),
-      fogDensity: 0.00055,
-      sunDirection: new THREE.Vector3(-0.85, 0.1, 0.45).normalize(),
-      sunColor: c('#ffb27a'),
+      skyTop: c('#030719'),
+      skyHorizon: c('#231d44'),
+      skyGround: c('#06070d'),
+      glow: c('#ff6a32'),
+      glowStrength: 0.5,
+      glowDirection: new THREE.Vector3(-0.92, 0.04, 0.38).normalize(),
+      fogColor: c('#17152a'),
+      fogDensity: 0.00052,
+      sunDirection: new THREE.Vector3(-0.3, 0.86, 0.42).normalize(),
+      sunColor: c('#c6cdea'),
       sunIntensity: 1.6,
-      hemiSky: c('#9aa4e0'),
-      hemiGround: c('#5a3f3a'),
+      hemiSky: c('#6273b0'),
+      hemiGround: c('#241f2e'),
       hemiIntensity: 0.85,
-      stars: 0.25,
-      exposure: 1.05,
+      stars: 0.4,
+      exposure: 1.0,
+      clouds: 0.32,
     };
   }
   return {
-    skyTop: c('#02040b'),
-    skyHorizon: c(city ? '#1b1a2c' : desert ? '#13182c' : '#0b1428'),
-    skyGround: c('#05070c'),
-    glow: c(city ? '#ff8a3c' : desert ? '#ffb070' : '#3a5a9a'),
-    glowStrength: city ? 0.55 : desert ? 0.3 : 0.15,
-    fogColor: c(city ? '#1a1822' : '#0b1020'),
-    fogDensity: 0.00065,
-    sunDirection: new THREE.Vector3(0.3, 0.75, -0.55).normalize(),
+    skyTop: c('#01030a'),
+    skyHorizon: c(city ? '#1d1830' : desert ? '#141a30' : '#0b1328'),
+    skyGround: c('#04050a'),
+    glow: c(city ? '#ff8a3c' : desert ? '#ff9a58' : '#3a5a9a'),
+    glowStrength: city ? 0.55 : desert ? 0.32 : 0.15,
+    fogColor: c(city ? '#14111d' : desert ? '#0e1122' : '#0a0f1d'),
+    fogDensity: 0.0006,
+    sunDirection: new THREE.Vector3(0.3, 0.62, -0.72).normalize(),
     sunColor: c('#c8d6ff'),
     sunIntensity: 0.8,
     hemiSky: c('#6a7aa8'),
-    hemiGround: c('#2a2a30'),
+    hemiGround: c('#24242c'),
     hemiIntensity: 0.9,
-    stars: city ? 0.45 : 1,
-    exposure: 1.1,
+    stars: city ? 0.4 : 1,
+    exposure: 1.0,
+    clouds: city ? 0.35 : 0.25,
   };
 }
 
@@ -117,6 +129,8 @@ export interface SkyDome {
  */
 export function createSkyDome(timeOfDay: TimeOfDay, theme: EnvironmentTheme): SkyDome {
   const a = getAtmosphere(timeOfDay, theme);
+  const day = timeOfDay === 'day';
+  const dusk = timeOfDay === 'dusk';
   const uniforms = {
     uTop: { value: a.skyTop },
     uHorizon: { value: a.skyHorizon },
@@ -124,10 +138,15 @@ export function createSkyDome(timeOfDay: TimeOfDay, theme: EnvironmentTheme): Sk
     uGlow: { value: a.glow },
     uGlowStrength: { value: a.glowStrength },
     uSunDir: { value: a.sunDirection.clone() },
+    uGlowDir: { value: (a.glowDirection ?? a.sunDirection).clone() },
     uSunColor: { value: a.sunColor },
-    uSunSize: { value: timeOfDay === 'night' ? 0.0009 : timeOfDay === 'dusk' ? 0.0016 : 0.0012 },
-    uSunGlow: { value: timeOfDay === 'night' ? 0.12 : timeOfDay === 'dusk' ? 0.9 : 0.5 },
+    // Blue hour: the sun has set (no disc), the ember band carries the colour.
+    uSunSize: { value: timeOfDay === 'night' ? 0.00035 : dusk ? 0 : 0.0011 },
+    uSunGlow: { value: timeOfDay === 'night' ? 0.08 : dusk ? 0 : 0.55 },
     uStars: { value: a.stars },
+    uClouds: { value: a.clouds ?? 0 },
+    uCloudLit: { value: new THREE.Color(day ? '#ffffff' : dusk ? '#7a4a58' : '#3a2f3a') },
+    uCloudShade: { value: new THREE.Color(day ? '#9fb0c4' : dusk ? '#0c0b1c' : '#07080d') },
     uTime: { value: 0 },
   };
   const material = new THREE.ShaderMaterial({
@@ -142,26 +161,51 @@ export function createSkyDome(timeOfDay: TimeOfDay, theme: EnvironmentTheme): Sk
       }`,
     fragmentShader: /* glsl */ `
       uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uGround; uniform vec3 uGlow;
-      uniform float uGlowStrength; uniform vec3 uSunDir; uniform vec3 uSunColor;
+      uniform float uGlowStrength; uniform vec3 uSunDir; uniform vec3 uGlowDir; uniform vec3 uSunColor;
       uniform float uSunSize; uniform float uSunGlow; uniform float uStars; uniform float uTime;
+      uniform float uClouds; uniform vec3 uCloudLit; uniform vec3 uCloudShade;
       varying vec3 vDir;
       float hash13(vec3 p) {
         p = fract(p * 0.1031);
         p += dot(p, p.zyx + 31.32);
         return fract((p.x + p.y) * p.z);
       }
+      float hash12(vec2 p) {
+        vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+      }
+      float vnoise(vec2 p) {
+        vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+      }
       void main() {
         vec3 d = normalize(vDir);
         float h = d.y;
-        vec3 col = mix(uHorizon, uTop, pow(clamp(h, 0.0, 1.0), 0.5));
-        col = mix(col, uGround, smoothstep(0.0, -0.12, h));
+        // Two-stage gradient: hazy band near the horizon, deep zenith.
+        vec3 col = mix(uHorizon, uTop, pow(clamp(h, 0.0, 1.0), 0.42));
+        col = mix(col, uHorizon * 1.08, exp(-max(h, 0.0) * 28.0) * 0.6);
+        col = mix(col, uGround, smoothstep(0.0, -0.1, h));
         vec3 sd = normalize(uSunDir);
+        vec3 gd = normalize(uGlowDir);
         float s = max(dot(d, sd), 0.0);
-        // Horizon glow, stronger towards the sun azimuth.
-        float az = max(dot(normalize(vec2(d.x, d.z) + 1e-5), normalize(vec2(sd.x, sd.z) + 1e-5)), 0.0);
-        col += uGlow * uGlowStrength * exp(-abs(h) * 9.0) * (0.45 + 0.55 * az * az);
-        col += uSunColor * (pow(s, 6.0) * 0.25 + pow(s, 48.0) * 0.6) * uSunGlow;
+        float az = max(dot(normalize(vec2(d.x, d.z) + 1e-5), normalize(vec2(gd.x, gd.z) + 1e-5)), 0.0);
+        float band = exp(-abs(h) * 7.0);
+        col += uGlow * uGlowStrength * band * (0.25 + 0.75 * az * az * az);
+        col += uGlow * uGlowStrength * 0.6 * exp(-abs(h) * 30.0) * az * az;
+        col += uSunColor * (pow(s, 6.0) * 0.22 + pow(s, 64.0) * 0.6) * uSunGlow;
         col += uSunColor * smoothstep(1.0 - uSunSize, 1.0 - uSunSize * 0.55, s) * 3.0;
+        if (uClouds > 0.0 && h > 0.0) {
+          vec2 cp = d.xz / (h + 0.16) * 1.35 + vec2(uTime * 0.0035, uTime * 0.001);
+          float cn = vnoise(cp) * 0.52 + vnoise(cp * 2.07 + 1.7) * 0.3 + vnoise(cp * 4.3 + 5.1) * 0.18;
+          float cov = smoothstep(0.78 - uClouds * 0.32, 0.98 - uClouds * 0.25, cn);
+          cov *= smoothstep(0.015, 0.16, h) * (1.0 - smoothstep(0.55, 0.95, h) * 0.6);
+          float lit = clamp(0.35 + 0.65 * (cn - 0.5) * 2.0, 0.0, 1.0);
+          vec3 cc = mix(uCloudShade, uCloudLit, lit);
+          cc += uGlow * uGlowStrength * band * az * 1.4;
+          cc += uSunColor * pow(s, 8.0) * uSunGlow * 0.8;
+          col = mix(col, cc, cov * 0.85);
+        }
         if (uStars > 0.0 && h > 0.0) {
           vec3 p = d * 260.0;
           vec3 cell = floor(p);
@@ -169,7 +213,7 @@ export function createSkyDome(timeOfDay: TimeOfDay, theme: EnvironmentTheme): Sk
           vec3 f = fract(p) - 0.5;
           float star = step(0.992, r) * smoothstep(0.22, 0.0, length(f));
           star *= 0.55 + 0.45 * sin(uTime * (0.8 + r * 3.0) + r * 60.0);
-          col += vec3(0.9, 0.95, 1.0) * star * uStars * smoothstep(0.02, 0.3, h) * (0.6 + 2.0 * fract(r * 31.0));
+          col += vec3(0.9, 0.95, 1.0) * star * uStars * smoothstep(0.04, 0.35, h) * (0.6 + 2.0 * fract(r * 31.0));
         }
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>

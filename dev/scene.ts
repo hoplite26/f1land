@@ -1,12 +1,17 @@
 /**
  * Standalone race-scene harness (independent of the app screens):
  *   /dev/scene.html?ch=ae-gp&q=high&cam=director&zone=2&follow=VER&rival=LEC&hud=1
- * Exposes window.__scene / __live / __setCam for screenshot scripts.
+ *   &idle=1       withhold sim frames (the pre-live "syncing" state: grid + flyover)
+ *   &colliders=1  draw the camera-occlusion proxies
+ *   &lang=ru      label language (default en)
+ * Exposes window.__scene / __live / __setCam / __feed(on) for screenshot scripts.
  */
 import '@fontsource/chakra-petch/600.css';
 import '@fontsource/chakra-petch/700.css';
 import '@/styles/scene.css';
 import { useLive, onFrame, onMoment, startLiveLoop } from '@/store/live';
+import { setLang } from '@/i18n/core';
+import { registerFeatureDicts } from '@/i18n/extra';
 import { RaceScene } from '@/three/engine/RaceScene';
 import type { CameraMode } from '@/three/engine/cameraRig';
 import type { ModelQuality } from '@/three/models/types';
@@ -19,8 +24,12 @@ const zone = params.get('zone') ? (Number(params.get('zone')) as 1 | 2 | 3) : nu
 const hud = document.getElementById('hud')!;
 if (!params.get('hud')) hud.style.display = 'none';
 
+registerFeatureDicts();
+setLang(params.get('lang') === 'ru' ? 'ru' : 'en');
+
 let scene: RaceScene | null = null;
 let builtFor: unknown = null;
+let feed = params.get('idle') !== '1';
 startLiveLoop();
 // Replay mode starts at the session start; ?t=<seconds> seeks (fast catch-up below).
 const seekT = Number(params.get('t') ?? '0');
@@ -31,8 +40,8 @@ void useLive.getState().open(ch, params.get('mode') === 'live' ? 'live' : 'repla
     r.replayWall = Date.now();
   }
 });
-onFrame((f) => scene?.pushFrame(f));
-onMoment((m) => scene?.onMoment(m));
+onFrame((f) => feed && scene?.pushFrame(f));
+onMoment((m) => feed && scene?.onMoment(m));
 
 useLive.subscribe((st) => {
   const r = st.runner;
@@ -52,6 +61,7 @@ useLive.subscribe((st) => {
       s.setCameraMode(cam);
       s.showZones(true);
       s.setZone(zone, params.get('frameZone') === '1');
+      if (params.get('colliders') === '1') s.scene.add(s.colliders.debugMesh());
       (window as unknown as { __ready: boolean }).__ready = true;
     });
   }
@@ -78,7 +88,11 @@ useLive.subscribe((st) => {
   s.setLabelIds([...ids]);
 });
 
-Object.assign(window, { __live: useLive, __setCam: (m: CameraMode) => scene?.setCameraMode(m) });
+Object.assign(window, {
+  __live: useLive,
+  __setCam: (m: CameraMode) => scene?.setCameraMode(m),
+  __feed: (on: boolean) => (feed = on),
+});
 
 let last = performance.now();
 let frames = 0;
