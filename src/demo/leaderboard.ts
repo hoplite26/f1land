@@ -97,3 +97,12 @@ export function leaderboardWithYou(period: LbPeriod, nowMs: number, you: Omit<Lb
   list.splice(idx, 0, me);
   return { list, rank: idx + 1 };
 }
+
+/** The local player's 1-based rank for a period (cheap enough to call on settlement). */
+export function rankFor(period: LbPeriod, entries: Entry[], xp: number, nowMs: number): { rank: number; of: number } {
+  const points = userPoints(entries, xp, period, nowMs);
+  const list = leaderboard(period, nowMs);
+  let idx = list.findIndex((p) => p.points < points);
+  if (idx < 0) idx = list.length;
+  return { rank: idx + 1, of: list.length + 1 };
+}

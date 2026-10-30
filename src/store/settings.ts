@@ -6,6 +6,8 @@ import type { CameraMode } from '@/three/engine/cameraRig';
 export type QualitySetting = 'auto' | 'low' | 'medium' | 'high';
 export type MotionSetting = 'system' | 'reduced' | 'full';
 export type RenderMode = '3d' | '2d';
+/** Responsible-play reminder interval in minutes (0 = off). */
+export type ReminderSetting = 0 | 30 | 60 | 120;
 
 interface SettingsState {
   lang: Lang;
@@ -18,6 +20,7 @@ interface SettingsState {
   showZones: boolean;
   favoriteDriver: string | null;
   onboarded: boolean;
+  reminderMin: ReminderSetting;
   set: (p: Partial<Omit<SettingsState, 'set'>>) => void;
 }
 
@@ -40,6 +43,7 @@ export const useSettings = create<SettingsState>()(
       showZones: true,
       favoriteDriver: null,
       onboarded: false,
+      reminderMin: 60,
       set: (p) => set(p),
     }),
     { name: 'pa-f1-settings', version: 1 },

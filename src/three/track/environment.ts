@@ -13,7 +13,6 @@ import {
   createBuildings,
   createBushes,
   createGrandstand,
-  createGroundMaterial,
   createLampPosts,
   createLandmark,
   createLightTowers,
@@ -37,6 +36,8 @@ import type { TrackMeshes } from './trackMesh';
 import { PIT_HALF_WIDTH, ribbon, wall, yawFromHeading } from './trackMesh';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildLayout, runsWhere, type TrackLayout } from './layout';
+import { createGround } from './ground';
+import { buildSiteMap, type SiteLight, type SitePaved } from './site';
 
 export interface TvSpot {
   s: number;
@@ -58,10 +59,23 @@ export interface EnvironmentHandle {
   dispose(): void;
 }
 
+/** Night light spill of landmarks: [radius m, intensity]. */
+const LANDMARK_GLOW: Partial<Record<CircuitData['landmarks'][number]['kind'], [number, number]>> = {
+  'yas-hotel': [130, 0.75],
+  sphere: [170, 0.8],
+  'sakhir-tower': [60, 0.6],
+  stadium: [140, 0.5],
+  marina: [120, 0.35],
+  harbour: [160, 0.4],
+  towers: [120, 0.35],
+  'ferris-wheel': [60, 0.4],
+  'observation-tower': [50, 0.4],
+};
+
 const SHIRTS = [...TEAMS.flatMap((t) => [t.color, t.livery.primary]), '#ffffff', '#1d1f24', '#e8e8e8'];
 
 /** Assemble the procedural surroundings from the circuit's own layout. */
-export function buildEnvironment({ circuit, model, track, quality, renderer }: {
+export function buildEnvironment({ circuit, model, track, quality }: {
   circuit: CircuitData;
   model: TrackModel;
   track: TrackMeshes;
@@ -86,19 +100,16 @@ export function buildEnvironment({ circuit, model, track, quality, renderer }: {
   const sky = createSkyDome(tod, circuit.theme);
   group.add(sky.mesh);
 
-  // --- ground: tiled texture + world-space macro variation (no visible tiling) ---
+  // --- ground: procedural world-space shader driven by the baked site map ---
   const bounds = circuit.bounds;
   const size = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY, 1000) + 5000;
-  const groundGeometry = new THREE.PlaneGeometry(size, size);
-  const groundMaterial = createGroundMaterial(circuit.theme, tod, { quality, repeat: size / 34 });
-  if (groundMaterial.map) groundMaterial.map.anisotropy = Math.min(quality === 'low' ? 2 : 8, renderer.capabilities.getMaxAnisotropy());
-  patchGroundMacro(groundMaterial, circuit.theme === 'desert' || circuit.theme === 'dunes');
-  const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set((bounds.minX + bounds.maxX) / 2, -0.08, -(bounds.minY + bounds.maxY) / 2);
-  ground.receiveShadow = quality === 'high';
-  group.add(ground);
-  owned.push(groundGeometry, groundMaterial);
+  const ground = createGround(circuit, quality, size, model.track.headingAt(0));
+  group.add(ground.mesh);
+  owned.push(ground);
+  /** Night light pools and paved areas collected while dressing; baked at the end. */
+  const siteLights: SiteLight[] = [];
+  const sitePaved: SitePaved[] = [];
+  let paddock: { center: THREE.Vector3; yaw: number; length: number; depth: number } | null = null;
 
   const layout = buildLayout(circuit, model, track);
   const { L, street } = layout;
@@ -124,6 +135,20 @@ export function buildEnvironment({ circuit, model, track, quality, renderer }: {
     const yaw = yawFromHeading(pit.headingAt(pitMid));
     pitComplex.root.rotation.y = yaw + (garageSide > 0 ? -Math.PI / 2 : Math.PI / 2);
     addProp(pitComplex.root);
+    // Paddock behind the garages: paved, floodlit, kept free of trees.
+    const ry = pitComplex.root.rotation.y;
+    const back = new THREE.Vector3(-Math.sin(ry), 0, -Math.cos(ry));
+    const pc = pitComplex.root.position.clone().addScaledVector(back, 22 + 42);
+    sitePaved.push({ cx: pc.x, cz: pc.z, w: complexLen + 40, d: 92, yaw: ry });
+    layout.occupyRect(pc.x, pc.z, ry, complexLen + 40, 92);
+    paddock = { center: pc, yaw: ry, length: complexLen + 40, depth: 92 };
+    const along = new THREE.Vector3(Math.cos(ry), 0, -Math.sin(ry));
+    for (let k = -2; k <= 2; k++) {
+      const lp = pitComplex.root.position.clone().addScaledVector(along, (k * complexLen) / 5);
+      siteLights.push({ x: lp.x, z: lp.z, r: 48, k: 0.85 });
+      const pp = pc.clone().addScaledVector(along, (k * complexLen) / 5);
+      siteLights.push({ x: pp.x, z: pp.z, r: 40, k: 0.55 });
+    }
     // Pit wall beyond the building (the complex brings its own along the boxes).
     const wallMat = new THREE.MeshLambertMaterial({ color: 0xd2d6da });
     const lat = -garageSide * (PIT_HALF_WIDTH + 0.4);
@@ -221,6 +246,13 @@ export function buildEnvironment({ circuit, model, track, quality, renderer }: {
     model.crowd.setWaveDirection(1, 0);
     addProp(model.root);
     stands.push({ model, s: spec.s, side, pos: tmp.clone(), height: model.heightM });
+    {
+      const sx = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+      for (let k = -1; k <= 1; k++) {
+        const lp = tmp.clone().addScaledVector(sx, (k * len) / 3).addScaledVector(fwd, -depth * 0.3);
+        siteLights.push({ x: lp.x, z: lp.z, r: Math.max(34, depth * 1.4), k: 0.8 });
+      }
+    }
     // Catch fence in front of each stand.
     const fp: THREE.Vector3[] = [];
     for (let s = spec.s - len / 2; s <= spec.s + len / 2; s += 4) fp.push(layout.world(s, side * (layout.barrier(s, side) + 0.6)));
@@ -293,6 +325,10 @@ export function buildEnvironment({ circuit, model, track, quality, renderer }: {
       }
     }
     addProp(createLampPosts(pos, face, quality, { height: 11, halos: night && quality !== 'low' }));
+    pos.forEach((p, i) => {
+      const y = face[i]!;
+      siteLights.push({ x: p.x + Math.sin(y) * 6, z: p.z + Math.cos(y) * 6, r: 26, k: 0.62 });
+    });
   } else if (night) {
     const pos: THREE.Vector3[] = [];
     const face: number[] = [];
@@ -308,6 +344,10 @@ export function buildEnvironment({ circuit, model, track, quality, renderer }: {
       face.push(layout.facingTrack(s, side));
     }
     addProp(createLightTowers(pos, face, quality, { height: 30, halos: quality !== 'low' }));
+    pos.forEach((p, i) => {
+      const y = face[i]!;
+      siteLights.push({ x: p.x + Math.sin(y) * 22, z: p.z + Math.cos(y) * 22, r: 72, k: 0.95 });
+    });
   }
 
   // --- vegetation ---
@@ -382,8 +422,40 @@ export function buildEnvironment({ circuit, model, track, quality, renderer }: {
     landmark.root.rotation.y = yawFromHeading(spec.rotation);
     landmark.root.scale.setScalar(spec.scale);
     group.add(landmark.root);
+    const glow = LANDMARK_GLOW[spec.kind];
+    if (glow) siteLights.push({ x: spec.position[0], z: -spec.position[1], r: glow[0] * spec.scale, k: glow[1] });
     return landmark;
   });
+
+  // Start gantry + grid are always floodlit.
+  {
+    const g0 = layout.world(0, 0);
+    siteLights.push({ x: g0.x, z: g0.z, r: 36, k: 0.75 });
+  }
+
+  // --- service road + car parks behind the paddock (aerial realism) ---
+  const roads: Array<{ pts: THREE.Vector3[]; width: number }> = [];
+  if (paddock && !street) {
+    const { center, yaw, length, depth } = paddock;
+    const back = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const along = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    for (const side of [-1, 1]) {
+      const cp = center.clone().addScaledVector(along, side * (length / 2 + 75)).addScaledVector(back, 10);
+      if (layout.rectFree(cp.x, cp.z, yaw, 120, 80)) {
+        layout.occupyRect(cp.x, cp.z, yaw, 124, 84);
+        sitePaved.push({ cx: cp.x, cz: cp.z, w: 120, d: 80, yaw });
+        siteLights.push({ x: cp.x, z: cp.z, r: 60, k: 0.35 });
+      }
+    }
+    // Access road out of the paddock; stops where it would cross the circuit.
+    const pts: THREE.Vector3[] = [];
+    for (let d = depth / 2; d < 1100; d += 24) {
+      const p = center.clone().addScaledVector(back, d).addScaledVector(along, Math.sin(d / 160) * 40);
+      if (d > depth / 2 + 30 && !layout.isFree(p.x, p.z)) break;
+      pts.push(p);
+    }
+    if (pts.length > 3) roads.push({ pts, width: 9 });
+  }
 
   // Static props never move: skip per-frame matrix recomputation.
   group.traverse((o) => {
@@ -392,6 +464,18 @@ export function buildEnvironment({ circuit, model, track, quality, renderer }: {
   });
   // Animated / camera-following children keep auto matrices.
   for (const o of [sky.mesh, pitComplex.root, ...stands.map((st) => st.model.root), ...landmarks.map((l) => l.root)]) o.traverse((c) => (c.matrixAutoUpdate = true));
+
+  const site = buildSiteMap({
+    circuit,
+    model,
+    quality,
+    // Abu Dhabi's twilight race is treated as a night scene once the floodlights take over.
+    night: tod === 'day' ? 0 : tod === 'dusk' ? 0.95 : 1,
+    lights: siteLights,
+    paved: sitePaved,
+    roads,
+    trackLight: street ? 0.55 : 0.62,
+  });
 
   return {
     group,
@@ -415,6 +499,7 @@ export function buildEnvironment({ circuit, model, track, quality, renderer }: {
       for (const st of stands) st.model.crowd.pulse(strength, 3);
     },
     dispose() {
+      site.dispose();
       sky.dispose();
       owned.forEach((o) => o.dispose());
       gantry.dispose();
@@ -453,38 +538,6 @@ function buildingStyle(c: CircuitData): BuildingStyle {
   if (c.theme === 'desert') return 'desert';
   if (c.theme === 'street') return 'modern';
   return 'industrial';
-}
-
-/**
- * Low-frequency world-space tint variation for the ground (breaks texture
- * tiling and gives the infield patchy, mown-grass depth).
- */
-function patchGroundMacro(mat: THREE.Material, sandy: boolean): void {
-  mat.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vGW;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGW = (modelMatrix * vec4(transformed, 1.0)).xz;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-varying vec2 vGW;
-float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float gNoise(vec2 p) {
-  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(gHash(i), gHash(i + vec2(1.0, 0.0)), f.x), mix(gHash(i + vec2(0.0, 1.0)), gHash(i + vec2(1.0, 1.0)), f.x), f.y);
-}`,
-      )
-      .replace(
-        '#include <map_fragment>',
-        `#include <map_fragment>
-float gm = gNoise(vGW * 0.004) * 0.55 + gNoise(vGW * 0.017) * 0.3 + gNoise(vGW * 0.09) * 0.15;
-${sandy ? 'diffuseColor.rgb *= mix(0.82, 1.12, gm);' : `diffuseColor.rgb *= mix(0.7, 1.18, gm);
-float stripe = step(0.5, fract(vGW.x / 18.0 + vGW.y / 47.0));
-diffuseColor.rgb *= mix(0.93, 1.05, stripe);`}`,
-      );
-  };
-  mat.customProgramCacheKey = () => `pulse-ground|${sandy}`;
 }
 
 /* ------------------------------------------------------------------ */

@@ -20,7 +20,8 @@ export default defineConfig({
     { name: 'mobile-430', use: { ...devices['iPhone 14 Pro Max'], viewport: { width: 430, height: 932 }, deviceScaleFactor: 2, defaultBrowserType: 'chromium' } },
   ],
   webServer: {
-    command: 'pnpm build && pnpm preview --port 4173 --strictPort',
+    // VITE_E2E exposes the store handles used by e2e/helpers.ts; regular builds do not.
+    command: 'VITE_E2E=1 pnpm build && pnpm preview --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: true,
     timeout: 240_000,
