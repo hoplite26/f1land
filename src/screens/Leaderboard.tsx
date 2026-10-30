@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useWallet } from '@/store/wallet';
+import { useNav } from '@/store/nav';
 import { leaderboardWithYou, userPoints, type LbPeriod, type LbPlayer } from '@/demo/leaderboard';
 import { weekStart } from '@/demo/progress';
 import { SubHeader } from '@/app/Header';
 import { Card, DriverAvatar, Segmented, useNow } from '@/ui/kit';
-import { IconTimer } from '@/ui/icons';
-import { flagEmoji, fmtDuration, fmtNumber, t } from '@/i18n/core';
+import { IconArrow, IconTimer } from '@/ui/icons';
+import { flagEmoji, fmtDuration, fmtNumber, plural, t } from '@/i18n/core';
+import { haptic } from '@/telegram/sdk';
 import { PageHead, Reveal, useBack, useReduced } from './common';
 import { useYou } from './Profile';
 
@@ -98,7 +100,9 @@ export function LeaderboardScreen() {
   const rest = list.slice(3, 50);
   const me = list[rank - 1]!;
   const resetIn = weekStart(now) + 7 * 86_400_000 - now;
-  const pct = Math.max(1, Math.round((rank / list.length) * 100));
+  const go = useNav((s) => s.go);
+  // Points still needed to overtake the current #50.
+  const toTop = rank > 50 ? Math.max(1, (list[49]?.points ?? 0) - me.points + 1) : 0;
   return (
     <>
       <SubHeader onBack={back} />
@@ -133,9 +137,25 @@ export function LeaderboardScreen() {
       {rank > 3 && (
         <div className="sc-lbpin">
           <Row p={me} rank={rank} />
-          <div className="sc-lbpin__note">
-            {rank <= 50 ? t('scr.lb.inTop') : t('scr.lb.topPct', { n: pct })}
-          </div>
+          {me.points === 0 ? (
+            <button
+              className="sc-lbpin__cta"
+              onClick={() => {
+                haptic.tap();
+                go('live');
+              }}
+            >
+              <span>{t('scr.lb.first')}</span>
+              <b>
+                {t('scr.lb.firstCta')}
+                <IconArrow size={14} />
+              </b>
+            </button>
+          ) : (
+            <div className="sc-lbpin__note">
+              {rank <= 50 ? t('scr.lb.inTop') : t('scr.lb.toTop', { n: `${fmtNumber(toTop)} ${plural(toTop, { ru: ['очко', 'очка', 'очков'], en: ['point', 'points'] })}` })}
+            </div>
+          )}
         </div>
       )}
       <p className="sc-fine">{t('scr.lb.demoNote')}</p>

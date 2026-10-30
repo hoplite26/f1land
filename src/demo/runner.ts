@@ -150,7 +150,8 @@ export class SessionRunner {
     if (goal - this.sim.t > 3) {
       // Catch-up in slices to keep the UI responsive.
       this.catchingUp = true;
-      while (this.sim.t < goal && performance.now() - t0 < budgetMs) this.sim.advanceTo(Math.min(goal, this.sim.t + 20));
+      // advanceTo moves in SIM_DT steps: stop once less than a step remains (otherwise this spins until the budget runs out).
+      while (goal - this.sim.t >= SIM_DT && performance.now() - t0 < budgetMs) this.sim.advanceTo(Math.min(goal, this.sim.t + 20));
       this.progress = goal > 0 ? Math.min(1, this.sim.t / goal) : 1;
       if (goal - this.sim.t <= 3) this.catchingUp = false;
     } else {
@@ -194,7 +195,8 @@ export async function replayToEnd(channelId: string, cycle: number, untilMs: num
   await r.init(Date.now(), cycle);
   r.onEvent(onEvent);
   const goal = Math.max(0, (untilMs - r.startMs) / 1000);
-  while (r.sim.t < goal && !r.sim.finished) {
+  // Same SIM_DT granularity as advanceTo: a sub-step remainder would never be consumed (endless loop).
+  while (goal - r.sim.t >= SIM_DT && !r.sim.finished) {
     r.sim.advanceTo(Math.min(goal, r.sim.t + 30));
     await new Promise((res) => setTimeout(res, 0));
   }

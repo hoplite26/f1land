@@ -569,31 +569,62 @@
   color: var(--text);
   font-size: 12px;
 }
-.lv-loading {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 10px;
-  background: radial-gradient(circle at 50% 40%, rgba(7, 11, 13, 0.6), rgba(5, 7, 8, 0.86));
+/* Startup status card: sits in the follow-card slot above the sheet, never blocks the scene. */
+.lv-sync {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 14px 10px 12px;
+  border: 1px solid rgba(198, 255, 61, 0.22);
+  border-radius: 16px;
+  background: linear-gradient(100deg, rgba(24, 34, 18, 0.95), rgba(10, 14, 17, 0.95) 55%);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
 }
-.lv-loading__ring {
-  width: 42px;
-  height: 42px;
+.lv-sync__ring {
+  flex: none;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   border: 3px solid rgba(198, 255, 61, 0.18);
   border-top-color: var(--lime);
   animation: lv-spin 0.9s linear infinite;
 }
-.lv-loading__t {
-  font-weight: 600;
+.lv-sync__body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.lv-sync__title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.lv-sync__hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+.lv-sync__pct {
+  flex: none;
+  min-width: 42px;
+  color: var(--lime);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: right;
+}
+.lv-sync .lv-progress {
+  width: 100%;
+  margin-top: 4px;
 }
 @keyframes lv-spin {
   to { transform: rotate(360deg); }
 }
 .lv-progress {
+  display: block;
   width: 170px;
   height: 4px;
   border-radius: 4px;
@@ -926,32 +957,41 @@
 .dsheet__body::-webkit-scrollbar {
   display: none;
 }
+/* The nav's raised centre button overlaps the bottom ~22 px of the sheet: keep content above it. */
+.dsheet__body {
+  padding-bottom: 32px;
+}
 
 /* Tabs */
+/* Five equal tabs (icon over label) fit a 360 px sheet with 48 px touch targets — no clipped tab. */
 .lv-tabs {
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 4px;
-  overflow-x: auto;
   padding: 0 8px;
-  scrollbar-width: none;
-}
-.lv-tabs::-webkit-scrollbar {
-  display: none;
 }
 .lv-tab {
   position: relative;
-  flex: 0 0 auto;
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  height: 38px;
-  padding: 0 12px;
-  border-radius: 12px;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 5px 2px 4px;
+  border-radius: 13px;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 600;
+  line-height: 1.15;
   white-space: nowrap;
   isolation: isolate;
+  transition: color 0.15s;
+}
+.lv-tab:active {
+  background: rgba(255, 255, 255, 0.06);
 }
 .lv-tab--on {
   color: #0a0e10;
@@ -961,28 +1001,39 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  border-radius: 12px;
+  border-radius: 13px;
   background: var(--lime);
   box-shadow: 0 0 18px rgba(198, 255, 61, 0.35);
 }
 .lv-tab__icon {
   display: inline-flex;
 }
+.lv-tab__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .lv-tab__count {
+  position: absolute;
+  top: 3px;
+  left: calc(50% + 7px);
   display: inline-grid;
   place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
   border-radius: 9px;
-  background: rgba(198, 255, 61, 0.16);
+  background: #22300f;
+  box-shadow: 0 0 0 1.5px rgba(10, 14, 16, 0.9);
   color: var(--lime);
   font-size: 10.5px;
   font-weight: 700;
+  line-height: 1;
 }
 .lv-tab--on .lv-tab__count {
-  background: rgba(0, 0, 0, 0.2);
-  color: #0a0e10;
+  background: #0a0e10;
+  box-shadow: none;
+  color: var(--lime);
 }
 
 /* ---------- Pool cards ---------- */
@@ -1178,6 +1229,56 @@
   color: var(--muted);
   font-size: 14px;
   text-align: center;
+}
+.lv-empty__title {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+.lv-empty__hint {
+  max-width: 300px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+/* Loading placeholders (feed syncing) */
+.lv-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 0 8px;
+}
+.lv-skel__label {
+  color: var(--muted);
+  font-size: 13px;
+}
+.lv-skel__items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lv-skel--cards .lv-skel__items {
+  flex-direction: row;
+  overflow: hidden;
+}
+.lv-skel__item {
+  display: block;
+  flex: none;
+  height: 36px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.1) 40%, rgba(255, 255, 255, 0.04) 80%) 0 0 / 220% 100%;
+  animation: lv-shimmer 1.4s linear infinite;
+}
+.lv-skel--cards .lv-skel__item {
+  width: min(300px, 84%);
+  height: 128px;
+  border-radius: 18px;
+}
+.lv-skel--list .lv-skel__item {
+  height: 128px;
+  border-radius: 18px;
+}
+@keyframes lv-shimmer {
+  to { background-position: -220% 0; }
 }
 .lv-empty__pulse {
   width: 10px;
@@ -1688,12 +1789,15 @@
 }
 .reduce-motion .lv-live-dot,
 .reduce-motion .lv-empty__pulse,
-.reduce-motion .lv-loading__ring {
+.reduce-motion .lv-skel__item,
+.reduce-motion .lv-sync__ring {
   animation: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .lv-live-dot,
-  .lv-empty__pulse {
+  .lv-empty__pulse,
+  .lv-skel__item,
+  .lv-sync__ring {
     animation: none;
   }
   .dsheet {

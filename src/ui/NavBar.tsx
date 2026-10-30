@@ -33,6 +33,7 @@ export function NavBar({ hidden }: { hidden?: boolean; openCount?: number }) {
   const tab = useNav((s) => s.tab);
   const pending = useWallet((s) => s.entries.reduce((n, e) => n + (e.state === 'PENDING' ? 1 : 0), 0));
   const go = useNav((s) => s.go);
+  const deep = useNav((s) => s.stack.length > 0);
   const motion = useSettings((s) => s.motion);
   const reduced = prefersReducedMotion(motion);
   useEffect(() => {
@@ -116,7 +117,7 @@ export function NavBar({ hidden }: { hidden?: boolean; openCount?: number }) {
           if (id !== tab) {
             haptic.impact(id === 'live' ? 'medium' : 'light');
             sfx.nav();
-          }
+          } else if (deep) haptic.tap();
           go(id);
         };
         if (id === 'live') {

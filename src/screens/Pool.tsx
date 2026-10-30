@@ -2,26 +2,28 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useLive } from '@/store/live';
 import { useNav } from '@/store/nav';
-import { usePools, multiplier, type LivePool } from '@/demo/poolEngine';
+import { usePools, type LivePool } from '@/demo/poolEngine';
 import { useWallet, type Entry } from '@/store/wallet';
+import { useSettings, prefersReducedMotion } from '@/store/settings';
 import { getEngine } from '@/app/sessionService';
 import { useSceneView } from '@/app/SceneHost';
 import { useSessionNow } from '@/app/hooks';
 import { layoutOf, outcomeLabel, poolTexts, type PoolLayout } from '@/app/poolText';
 import { canAcceptEntry, entryBlockReason, msUntilLock } from '@/domain/lifecycle';
-import { getTemplate } from '@/domain/markets/catalog';
 import type { Pool } from '@/domain/types';
 import type { CameraMode } from '@/three/engine/cameraRig';
 import { CHANNELS } from '@/demo/channels';
 import { CIRCUIT_META } from '@/data/circuits';
-import { fmtClock, fmtCountdown, fmtNumber, fmtOdds, getLang, t } from '@/i18n/core';
-import { Collapsible, Help, Sheet, SwipeConfirm } from '@/ui/kit';
+import { fmtClock, fmtCountdown, fmtNumber, t } from '@/i18n/core';
+import { createPortal } from 'react-dom';
+import { Collapsible, Help } from '@/ui/kit';
+import { PortalSheet } from '@/screens/common';
 import { SECTOR_COLORS } from '@/ui/TrackMap';
-import { IconCheck, IconChevron, IconInfo, IconLock, IconPit, IconTarget, IconTimer, IconTyre } from '@/ui/icons';
+import { IconCheck, IconChevron, IconClose, IconInfo, IconLock, IconPit, IconTarget, IconTimer, IconTyre, IconWarning } from '@/ui/icons';
 import { haptic } from '@/telegram/sdk';
 import { sfx } from '@/audio/sfx';
-import { Confetti, PoolMeta, StakePanel, Ticket } from '@/ui/bet/parts';
-import { FamilyVisual, OutcomeGrid, outcomeIcon, sceneChip } from '@/ui/bet/poolFamilies';
+import { BetDock, Confetti, MIN_STAKE, OddsValue, oddsText, PoolMeta, type DockStatus } from '@/ui/bet/parts';
+import { FamilyVisual, OutcomeGrid, outcomeIcon, outcomeOdds, sceneChip } from '@/ui/bet/poolFamilies';
 import { FlagGlyph, IcLink, IcPodium, IcStopwatch, IcSwords, IcTrophy } from '@/ui/bet/icons';
 import '@/styles/pool.css';
 
@@ -61,14 +63,20 @@ export function PoolScreen({ poolId }: { poolId: string }) {
   const draftKey = lp ? `${lp.pool.pool_id}@${lp.pool.version}` : '';
   const [outcome, setOutcome] = useState<string | null>(() => drafts.get(draftKey)?.outcome ?? null);
   const [stake, setStake] = useState<number>(() => drafts.get(draftKey)?.stake ?? Math.min(100, Math.max(10, Math.floor(useWallet.getState().balance))));
-  const [confirm, setConfirm] = useState<null | { phase: 'checking' | 'ok' | 'rejected'; entry?: Entry; outcome: string; stake: number; mult: number }>(null);
+  const [confirm, setConfirm] = useState<null | { phase: 'checking' | 'ok' | 'rejected'; reason?: 'locked' | 'balance' | 'error'; entry?: Entry; outcome: string; stake: number; mult: number }>(null);
+  const reduced = prefersReducedMotion(useSettings((s) => s.motion));
+  const cfRef = useRef<HTMLDivElement>(null);
   const [fire, setFire] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
-  const ticketRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (draftKey) drafts.set(draftKey, { outcome, stake });
   }, [draftKey, outcome, stake]);
+
+  // A stake above the balance (e.g. after another entry) would dead-end the swipe: follow the balance down.
+  useEffect(() => {
+    if (balance >= MIN_STAKE && stake > Math.floor(balance)) setStake(Math.floor(balance));
+  }, [balance, stake]);
 
   const pool = lp?.pool ?? null;
   const layout: PoolLayout = pool ? layoutOf(pool) : 'position';
@@ -127,6 +135,17 @@ export function PoolScreen({ poolId }: { poolId: string }) {
     setScene({ frozen: confirm !== null });
   }, [confirm, setScene]);
 
+  // Bring the result and its buttons into view once the check finishes (the sheet body scrolls on short screens).
+  const phase = confirm?.phase;
+  useEffect(() => {
+    if (phase !== 'ok' && phase !== 'rejected') return;
+    const id = requestAnimationFrame(() => {
+      const body = cfRef.current?.closest<HTMLElement>('.sheet__body');
+      body?.scrollTo({ top: body.scrollHeight, behavior: reduced ? 'auto' : 'smooth' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [phase, reduced]);
+
   const accept = pool ? canAcceptEntry(pool, now) : false;
   const blockKey = pool ? entryBlockReason(pool, now) : null;
   const wasOpen = useRef(accept);
@@ -167,27 +186,37 @@ export function PoolScreen({ poolId }: { poolId: string }) {
   }
 
   const tx = poolTexts(pool);
-  const templ = getTemplate(pool.market_id);
-  const mult = outcome ? multiplier(lp.book, outcome, stake) : null;
+  const mult = outcome ? outcomeOdds(lp, outcome, stake) : null;
   const totalPool = Object.values(lp.book.stakes).reduce((a, b) => a + b, 0);
-  const lang = getLang();
   const channel = CHANNELS.find((c) => c.id === useLive.getState().channelId);
   const meta = channel ? CIRCUIT_META.find((c) => c.id === channel.circuitId) : undefined;
   const selected = outcome ? pool.outcomes.find((o) => o.id === outcome) ?? null : null;
   const myPicks = new Set(myEntries.map((e) => e.outcomeId));
   const msLeft = msUntilLock(pool, now);
-  const insufficient = balance < stake || balance < 10;
+  const suspended = pool.status === 'OPEN' && pool.intake_status === 'SUSPENDED';
 
   const pick = (id: string) => {
     if (!accept) return;
-    const first = outcome === null;
+    if (outcome === id) {
+      setOutcome(null);
+      return;
+    }
     setOutcome(id);
-    if (first) requestAnimationFrame(() => ticketRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+    // The dock grows once an outcome is picked; keep the tapped tile visible above it.
+    window.setTimeout(() => {
+      const root = rootRef.current;
+      const tile = root?.querySelector<HTMLElement>('.og [aria-checked="true"]');
+      const dock = root?.querySelector<HTMLElement>('.bd');
+      const scroller = root?.closest<HTMLElement>('.screen');
+      if (!tile || !dock || !scroller) return;
+      const overlap = tile.getBoundingClientRect().bottom + 12 - dock.getBoundingClientRect().top;
+      if (overlap > 0) scroller.scrollBy({ top: overlap, behavior: reduced ? 'auto' : 'smooth' });
+    }, 260);
   };
 
   const submit = () => {
     if (!outcome) return;
-    const m = multiplier(lp.book, outcome, stake);
+    const m = outcomeOdds(lp, outcome, stake);
     setConfirm({ phase: 'checking', outcome, stake, mult: m });
     sfx.confirm();
     setTimeout(() => {
@@ -196,19 +225,20 @@ export function PoolScreen({ poolId }: { poolId: string }) {
       const serverNow = r?.nowMs ?? Date.now();
       const current = usePools.getState().pools.find((p) => p.pool.pool_id === pool.pool_id)?.pool ?? pool;
       // Server-side check with server time: a pool locked during the open sheet is rejected (QA17).
-      if (!engine || !r || !canAcceptEntry(current, serverNow) || useWallet.getState().balance < stake || !engine.placeEntry(pool.pool_id, outcome, stake, serverNow)) {
+      const reason = !engine || !r ? 'error' : !canAcceptEntry(current, serverNow) ? 'locked' : useWallet.getState().balance < stake ? 'balance' : null;
+      if (reason || !engine!.placeEntry(pool.pool_id, outcome, stake, serverNow)) {
         haptic.notify('error');
         sfx.lose();
-        setConfirm((c) => (c ? { ...c, phase: 'rejected' } : c));
+        setConfirm((c) => (c ? { ...c, phase: 'rejected', reason: reason ?? 'error' } : c));
         return;
       }
       const o = pool.outcomes.find((x) => x.id === outcome)!;
       const entry: Entry = {
         id: `E-${pool.pool_id.split(':').slice(-2).join('-')}-${Math.floor(serverNow / 1000) % 100000}`,
         poolId: pool.pool_id,
-        channelId: r.channel.id,
-        cycle: r.cycle,
-        sessionId: r.manifest.session_id,
+        channelId: r!.channel.id,
+        cycle: r!.cycle,
+        sessionId: r!.manifest.session_id,
         marketId: pool.market_id,
         outcomeId: outcome,
         pool: current,
@@ -223,7 +253,7 @@ export function PoolScreen({ poolId }: { poolId: string }) {
         settlement: null,
         settlementHistory: [],
         finalMultiplier: null,
-        circuitId: r.circuit.id,
+        circuitId: r!.circuit.id,
         meetingName: channel?.title ?? { ru: '', en: '' },
         seen: true,
       };
@@ -236,8 +266,19 @@ export function PoolScreen({ poolId }: { poolId: string }) {
     }, 900);
   };
 
-  const ctaLabel = !accept ? t(blockKey ?? 'pool.lockedNow') : !outcome ? t('pool.choose') : insufficient ? t('pool.insufficient') : t('pool.swipe');
-  const ctaSub = selected && mult ? `${outcomeLabel(selected, pool.market_id)} · ${stake} PULSE · ${fmtOdds(mult)}x` : undefined;
+  const toOpenPools = { label: t('pd.allPools'), onClick: () => go('live') };
+  const dockStatus: DockStatus | null = accept
+    ? null
+    : suspended
+      ? { icon: <FlagGlyph color="#ffd12e" size={20} />, title: t('pd.closed.suspended'), sub: t(blockKey ?? 'pd.closed.suspendedSub'), tone: 'yellow', action: toOpenPools }
+      : pool.status === 'RESOLVING'
+        ? { icon: <span className="cf__spin" />, title: t('pd.closed.resolving'), sub: t('pd.closed.resolvingSub'), tone: 'cyan', action: toOpenPools }
+        : pool.status === 'SETTLED'
+          ? { icon: <IcTrophy size={20} />, title: t('pd.closed.settled'), sub: t('pd.closed.settledSub'), tone: 'lime', action: toOpenPools }
+          : pool.status === 'VOID'
+            ? { icon: <IconInfo size={20} />, title: t('pd.closed.void'), sub: t('pd.closed.voidSub'), tone: 'yellow', action: toOpenPools }
+            : { icon: <IconLock size={18} />, title: t('pd.closed.locked'), sub: t('pd.closed.lockedSub'), tone: 'muted', action: toOpenPools };
+  const rejectedText = confirm?.reason === 'balance' ? t('pd.rejected.balance') : confirm?.reason === 'error' ? t('pd.rejected.error') : t('confirm.rejectedLocked');
 
   return (
     <div className="pl" ref={rootRef}>
@@ -245,7 +286,7 @@ export function PoolScreen({ poolId }: { poolId: string }) {
         onBack={back}
         layout={layout}
         title={tx.title}
-        right={<LockBox ms={msLeft} accept={accept} status={pool.status} suspended={pool.intake_status === 'SUSPENDED'} />}
+        right={<LockBox ms={msLeft} accept={accept} status={pool.status} suspended={suspended} />}
       />
 
       {/* 3D section (scene host shows through) */}
@@ -264,13 +305,17 @@ export function PoolScreen({ poolId }: { poolId: string }) {
         {live && sceneChip(pool, live.cars) && <div className="pl-hud pl-hud--tr num">{sceneChip(pool, live.cars)}</div>}
         <div className="pl-hud pl-hud--bl">
           <b>{meta?.shortName ?? meta?.name}</b>
-          {meta && <span className="num">{(meta.lengthM / 1000).toFixed(3)} km</span>}
+          {meta && (
+            <span className="num">
+              {fmtNumber(meta.lengthM / 1000, 3)} {t('pd.unit.km')}
+            </span>
+          )}
         </div>
         {layout === 'zone' && (
           <div className="pl-hud pl-hud--br">
             {(['S1', 'S2', 'S3'] as const).map((s, i) => (
               <span key={s} className={`pl-zchip ${outcome === s ? 'pl-zchip--on' : ''}`} style={{ ['--zc' as string]: SECTOR_COLORS[i] }}>
-                {s} <b className="num">{fmtOdds(multiplier(lp.book, s))}x</b>
+                {s} <OddsValue value={outcomeOdds(lp, s, stake)} />
               </span>
             ))}
           </div>
@@ -290,7 +335,7 @@ export function PoolScreen({ poolId }: { poolId: string }) {
           <span>{tx.anchor ?? tx.window}</span>
         </div>
         <div className="pl-q__meta">
-          <span className={`pl-chip pl-chip--${accept ? 'open' : pool.status.toLowerCase()}`}>{pool.intake_status === 'SUSPENDED' && pool.status === 'OPEN' ? t('pool.suspended') : t(`pool.status.${pool.status}`)}</span>
+          <span className={`pl-chip pl-chip--${suspended ? 'paused' : accept ? 'open' : pool.status.toLowerCase()}`}>{suspended ? t('pool.suspended') : t(`pool.status.${pool.status}`)}</span>
           <span className="pl-chip pl-chip--ghost">
             {t('pool.determinedBy')}: {tx.determinant}
           </span>
@@ -298,7 +343,7 @@ export function PoolScreen({ poolId }: { poolId: string }) {
         </div>
       </section>
 
-      <StateBanner lp={lp} blockKey={blockKey} accept={accept} />
+      <StateBanner lp={lp} />
       {myEntries.length > 0 && <MyResult lp={lp} entries={myEntries} onOpen={(id) => push({ name: 'entry', entryId: id })} />}
 
       <FamilyVisual lp={lp} layout={layout} />
@@ -308,22 +353,12 @@ export function PoolScreen({ poolId }: { poolId: string }) {
           <span className="pl-sec__t">{accept ? t('pool.choose') : pool.status === 'SETTLED' ? t('pl.result') : t('pl.outcomes')}</span>
           <span className="pl-sec__r">
             {accept ? t('pl.liveOdds') : lp.book.finalMultipliers ? t('pl.finalOdds') : ''}
-            <Help text={t('pool.estimateHint')} />
+            <Help text={t('pd.capHint')} />
           </span>
         </div>
         <OutcomeGrid lp={lp} layout={layout} value={accept ? outcome : null} onChange={pick} disabled={!accept} stake={stake} myPicks={myPicks} />
       </section>
 
-      {accept && (
-        <div ref={ticketRef}>
-          <Ticket pick={selected ? outcomeLabel(selected, pool.market_id) : null} pickIcon={selected ? outcomeIcon(selected, pool, 20) : undefined} odds={mult} stake={stake} onClear={selected ? () => (haptic.tap(), setOutcome(null)) : undefined}>
-            <StakePanel value={stake} onChange={setStake} balance={balance} />
-          </Ticket>
-          <div className="pl-cta">
-            <SwipeConfirm disabled={!accept || !outcome || insufficient} label={ctaLabel} sub={ctaSub} onConfirm={submit} />
-          </div>
-        </div>
-      )}
 
       <Collapsible title={t('pool.rules')} icon={<IconInfo size={18} />}>
         <p className="rules__text">{tx.rule}</p>
@@ -347,24 +382,34 @@ export function PoolScreen({ poolId }: { poolId: string }) {
             {fmtClock(Date.parse(pool.settlement_deadline), true)} UTC{fmtOffset()}
           </dd>
           <dt>{t('pool.versions')}</dt>
-          <dd className="num" style={{ fontSize: 11 }}>
-            {pool.template_version} · {pool.ruleset_version} · {pool.circuit_layout_version} · {pool.provider_schema_version}
+          <dd className="num rules__ver">
+            {pool.market_id} · {pool.template_version} · {pool.ruleset_version} · {pool.circuit_layout_version} · {pool.provider_schema_version}
           </dd>
         </dl>
-        <p className="muted" style={{ fontSize: 12 }}>
-          {t('pool.dataNote')}
-        </p>
-        <p className="muted" style={{ fontSize: 12 }}>
-          {templ.family} · {pool.market_id} · {lang.toUpperCase()}
-        </p>
+        <p className="muted rules__note">{t('pool.dataNote')}</p>
       </Collapsible>
 
-      <Sheet open={confirm !== null} onClose={() => setConfirm(null)} title={t('confirm.title')} label={t('confirm.title')}>
+      <BetDock
+        status={dockStatus}
+        pick={selected ? { label: outcomeLabel(selected, pool.market_id), icon: outcomeIcon(selected, pool, 22) } : null}
+        odds={mult}
+        stake={stake}
+        onStake={setStake}
+        balance={balance}
+        onConfirm={submit}
+        onWallet={() => push({ name: 'wallet' })}
+      />
+
+      {/* Portaled: inside the scrolling page an absolute sheet would anchor to the page bottom, not the screen. */}
+      <PortalSheet open={confirm !== null} onClose={() => confirm?.phase !== 'checking' && setConfirm(null)} title={t('confirm.title')} label={t('confirm.title')}>
         {confirm && (
-          <div className="cf">
+          <div className="cf" ref={cfRef}>
             <div className="cf__q">
               <span className="cf__k">{t('confirm.question')}</span>
               <b>{tx.question}</b>
+              <span className="cf__when">
+                <IconTimer size={13} /> {tx.anchor ?? tx.window}
+              </span>
             </div>
             <div className="cf__pick">
               <span className="cf__pick-icon">{outcomeIcon(pool.outcomes.find((o) => o.id === confirm.outcome)!, pool, 22)}</span>
@@ -372,20 +417,21 @@ export function PoolScreen({ poolId }: { poolId: string }) {
                 <span className="cf__k">{t('confirm.outcome')}</span>
                 <b>{outcomeLabel(pool.outcomes.find((o) => o.id === confirm.outcome)!, pool.market_id)}</b>
               </div>
-              <span className="cf__odds num">{fmtOdds(confirm.mult)}x</span>
+              <OddsValue value={confirm.mult} className="cf__odds" />
             </div>
-            <dl className="cf__dl">
-              <dt>{t('confirm.window')}</dt>
-              <dd>{tx.window}</dd>
-              <dt>{t('confirm.amount')}</dt>
-              <dd className="num">{fmtNumber(confirm.stake)} PULSE</dd>
-              <dt>{t('pool.potential')}</dt>
-              <dd className="num lime">≈ {fmtNumber(Math.round(confirm.stake * confirm.mult))} PULSE</dd>
-              <dt>{t('confirm.mode')}</dt>
-              <dd>
-                <span className="cf__demo">DEMO</span> {t('confirm.modeDemo')}
-              </dd>
-            </dl>
+            <div className="cf__sum">
+              <div>
+                <span className="cf__k">{t('pd.stake')}</span>
+                <b className="num">{fmtNumber(confirm.stake)} PULSE</b>
+              </div>
+              <div>
+                <span className="cf__k">{t('pool.potential')}</span>
+                <b className="num lime">≈ {fmtNumber(Math.round(confirm.stake * confirm.mult))} PULSE</b>
+              </div>
+              <span className="cf__demo" title={t('confirm.modeDemo')}>
+                DEMO
+              </span>
+            </div>
             <AnimatePresence mode="wait">
               {confirm.phase === 'checking' && (
                 <motion.div key="c" className="cf__state" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -406,8 +452,8 @@ export function PoolScreen({ poolId }: { poolId: string }) {
                 </motion.div>
               )}
               {confirm.phase === 'rejected' && (
-                <motion.div key="rej" className="cf__state cf__state--bad" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                  <IconLock size={20} /> {t('confirm.rejectedLocked')}
+                <motion.div key="rej" className="cf__state cf__state--bad" role="alert" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                  {confirm.reason === 'locked' ? <IconLock size={20} /> : <IconWarning size={20} />} <span>{rejectedText}</span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -417,6 +463,7 @@ export function PoolScreen({ poolId }: { poolId: string }) {
                   type="button"
                   className="pl-btn pl-btn--primary"
                   onClick={() => {
+                    haptic.tap();
                     setConfirm(null);
                     go('live');
                   }}
@@ -427,25 +474,34 @@ export function PoolScreen({ poolId }: { poolId: string }) {
                   type="button"
                   className="pl-btn pl-btn--ghost"
                   onClick={() => {
+                    const id = confirm.entry!.id;
+                    haptic.tap();
                     setConfirm(null);
-                    go('pools');
+                    push({ name: 'entry', entryId: id });
                   }}
                 >
-                  {t('confirm.toPools')}
+                  {t('pd.viewTicket')}
                 </button>
               </div>
             )}
             {confirm.phase === 'rejected' && (
               <div className="cf__btns">
-                <button type="button" className="pl-btn pl-btn--ghost" onClick={() => setConfirm(null)}>
+                <button
+                  type="button"
+                  className="pl-btn pl-btn--ghost"
+                  onClick={() => {
+                    haptic.tap();
+                    setConfirm(null);
+                  }}
+                >
                   {t('ui.close')}
                 </button>
               </div>
             )}
           </div>
         )}
-      </Sheet>
-      <Confetti fire={fire} />
+      </PortalSheet>
+      {createPortal(<Confetti fire={fire} />, document.querySelector('.app') ?? document.body)}
     </div>
   );
 }
@@ -474,7 +530,7 @@ function PoolHead({ onBack, layout, title, right }: { onBack: () => void; layout
         <IconChevron dir="left" size={20} />
       </button>
       <span className="pl-head__icon">{LAYOUT_ICON[layout]({ size: 18 })}</span>
-      <div className="pl-head__title ellipsis">{title}</div>
+      <div className="pl-head__title">{title}</div>
       {right}
     </header>
   );
@@ -490,52 +546,19 @@ function LockBox({ ms, accept, status, suspended }: { ms: number; accept: boolea
     );
   }
   return (
-    <div className={`pl-lock ${ms < 10_000 ? 'pl-lock--urgent' : ''}`} role="timer">
+    <div className={`pl-lock ${ms < 10_000 ? 'pl-lock--urgent' : ''}`} role="timer" aria-label={`${t('pool.locksIn')} ${fmtCountdown(ms)}`}>
       <IcStopwatch size={16} />
       <span className="pl-lock__text">
-        <small>{t('pool.locksIn')}</small>
+        <small>{t('pd.lockIn')}</small>
         <b className="num">{fmtCountdown(ms)}</b>
       </span>
     </div>
   );
 }
 
-function StateBanner({ lp, blockKey, accept }: { lp: LivePool; blockKey: string | null; accept: boolean }) {
+/** Result context at the top of the page; locked / resolving / paused states live in the bet dock. */
+function StateBanner({ lp }: { lp: LivePool }) {
   const pool = lp.pool;
-  if (accept) return null;
-  if (pool.status === 'OPEN' && pool.intake_status === 'SUSPENDED') {
-    return (
-      <div className="pl-banner pl-banner--red" role="status">
-        <FlagGlyph color="#ff3b47" size={20} />
-        <div>
-          <b>{t('pool.suspended')}</b>
-          <span>{t(blockKey ?? 'pool.lockedNow')}</span>
-        </div>
-      </div>
-    );
-  }
-  if (pool.status === 'LOCKED' || pool.status === 'OPEN') {
-    return (
-      <div className="pl-banner" role="status">
-        <IconLock size={18} />
-        <div>
-          <b>{t('pl.state.locked')}</b>
-          <span>{t('pl.state.lockedSub')}</span>
-        </div>
-      </div>
-    );
-  }
-  if (pool.status === 'RESOLVING') {
-    return (
-      <div className="pl-banner pl-banner--cyan" role="status">
-        <span className="cf__spin" />
-        <div>
-          <b>{t('pl.state.resolving')}</b>
-          <span>{t('pl.state.resolvingSub')}</span>
-        </div>
-      </div>
-    );
-  }
   if (pool.status === 'VOID') {
     const reason = pool.settlement?.void_reason;
     return (
@@ -574,7 +597,7 @@ function MyResult({ lp, entries, onOpen }: { lp: LivePool; entries: Entry[]; onO
   return (
     <motion.section className={`pl-res pl-res--${kind}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
       <div className="pl-res__head">
-        <span className="pl-res__icon">{kind === 'won' ? <IcTrophy size={22} /> : kind === 'pending' ? <IconCheck size={20} /> : kind === 'void' ? <IconInfo size={20} /> : <IconLock size={18} />}</span>
+        <span className="pl-res__icon">{kind === 'won' ? <IcTrophy size={22} /> : kind === 'pending' ? <IconCheck size={20} /> : kind === 'void' ? <IconInfo size={20} /> : <IconClose size={18} />}</span>
         <div className="pl-res__t">
           <b>{kind === 'won' ? t('pl.res.won') : kind === 'pending' ? (pool.status === 'OPEN' ? t('lv.youreIn') : t('pl.res.pending')) : kind === 'void' ? t('pl.res.void') : t('pl.res.lost')}</b>
           <span>{kind === 'won' ? t('pl.res.wonSub') : kind === 'pending' ? t('pl.res.pendingSub') : kind === 'void' ? t('pl.state.refund') : t('pl.res.lostSub')}</span>
@@ -588,7 +611,7 @@ function MyResult({ lp, entries, onOpen }: { lp: LivePool; entries: Entry[]; onO
             <button key={e.id} type="button" className="pl-res__row" onClick={() => onOpen(e.id)}>
               <span className="pl-res__pick ellipsis">{e.outcomeLabel}</span>
               <span className="num pl-res__stake">
-                {fmtNumber(e.stake)} · {fmtOdds(fm)}x
+                {fmtNumber(e.stake)} · {oddsText(fm)}
               </span>
               <b className={`num pl-res__val pl-res__val--${e.state.toLowerCase()}`}>
                 {e.state === 'WON' ? `+${fmtNumber(e.payout)}` : e.state === 'LOST' ? `−${fmtNumber(e.stake)}` : e.state === 'VOID' ? `↺ ${fmtNumber(e.payout)}` : `≈${fmtNumber(Math.round(e.stake * fm))}`}

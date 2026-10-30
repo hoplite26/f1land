@@ -23,12 +23,13 @@ function makeCanvas(w: number, h: number): { canvas: HTMLCanvasElement | Offscre
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
-    const ctx = canvas.getContext('2d');
+    // Software-backed: drawn once and uploaded (GPU-backed 2D contexts are costly to create).
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     return ctx ? { canvas, ctx } : null;
   }
   if (typeof OffscreenCanvas !== 'undefined') {
     const canvas = new OffscreenCanvas(w, h);
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     return ctx ? { canvas, ctx } : null;
   }
   return null;

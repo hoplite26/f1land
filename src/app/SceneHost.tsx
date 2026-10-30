@@ -23,6 +23,11 @@ interface SceneViewState {
   frozen: boolean;
   webglLost: boolean;
   pickList: string[] | null;
+  /** 3D build progress 0..1 and readiness (screens show their own loading UI from these). */
+  buildProgress: number;
+  sceneReady: boolean;
+  /** Canvas px covered by the screen's own UI (top strip / bottom cards); framing avoids them. */
+  insets: { top: number; bottom: number };
   set: (p: Partial<Omit<SceneViewState, 'set'>>) => void;
 }
 
@@ -35,6 +40,9 @@ export const useSceneView = create<SceneViewState>((set) => ({
   frozen: false,
   webglLost: false,
   pickList: null,
+  buildProgress: 0,
+  sceneReady: false,
+  insets: { top: 0, bottom: 0 },
   set: (p) => set(p),
 }));
 
@@ -52,13 +60,19 @@ export function getScene(): RaceScene | null {
   return activeScene;
 }
 
+let webglProbe: boolean | null = null;
+/** Probed once: a throwaway context per render is slow and counts against the browser's live-context limit. */
 function webglAvailable(): boolean {
+  if (webglProbe !== null) return webglProbe;
   try {
     const c = document.createElement('canvas');
-    return !!(c.getContext('webgl2') || c.getContext('webgl'));
+    const gl = c.getContext('webgl2') ?? c.getContext('webgl');
+    webglProbe = !!gl;
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
   } catch {
-    return false;
+    webglProbe = false;
   }
+  return webglProbe;
 }
 
 /**
@@ -102,7 +116,6 @@ function Scene3D() {
   const live = useLive((s) => s.live);
   const followId = useLive((s) => s.followId);
   const rivalId = useLive((s) => s.rivalId);
-  const setFollow = useLive((s) => s.setFollow);
   const quality = useSettings((s) => s.quality);
   const motion = useSettings((s) => s.motion);
   const camera = useSettings((s) => s.camera);
@@ -116,6 +129,9 @@ function Scene3D() {
   useEffect(() => {
     if (!host.current || !labelsRef.current || !runner) return;
     let disposed = false;
+    setReady(false);
+    setBuildProgress(0);
+    useSceneView.getState().set({ sceneReady: false, buildProgress: 0 });
     const scene = new RaceScene(host.current, {
       quality: effectiveQuality(resolveQuality(quality)),
       reducedMotion: prefersReducedMotion(motion),
@@ -136,9 +152,15 @@ function Scene3D() {
     sceneRef.current = scene;
     activeScene = scene;
     if (import.meta.env.DEV) Object.assign(window, { __scene: scene });
-    void scene.load(runner.circuit, runner.model, runner.manifest.participants, (p) => !disposed && setBuildProgress(p)).then(() => {
+    const progress = (p: number) => {
+      if (disposed) return;
+      setBuildProgress(p);
+      useSceneView.getState().set({ buildProgress: p });
+    };
+    void scene.load(runner.circuit, runner.model, runner.manifest.participants, progress).then(() => {
       if (disposed) return;
       setReady(true);
+      useSceneView.getState().set({ sceneReady: true, buildProgress: 1 });
     });
     const offFrame = onFrame((f) => scene.pushFrame(f));
     const offMoment = onMoment((m) => {
@@ -147,11 +169,17 @@ function Scene3D() {
     });
     let raf = 0;
     let last = performance.now();
+    let nextPoster = 0;
     const loop = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
-      if (document.visibilityState !== 'hidden' && useSceneView.getState().layout !== 'hidden') {
-        scene.render(dt, useLive.getState().live?.stale ?? false);
+      const st = useLive.getState();
+      // While the feed catches up nothing moves: refresh a still establishing frame now and then
+      // (rarer when frames are expensive) and leave the main thread to the catch-up.
+      const syncing = !st.live || st.loading;
+      if ((!syncing || now >= nextPoster) && document.visibilityState !== 'hidden' && useSceneView.getState().layout !== 'hidden') {
+        scene.render(dt, st.live?.stale ?? false);
+        if (syncing) nextPoster = now + Math.max(1200, (performance.now() - now) * 20);
       }
       raf = requestAnimationFrame(loop);
     };
@@ -164,6 +192,7 @@ function Scene3D() {
       scene.dispose();
       if (activeScene === scene) activeScene = null;
       sceneRef.current = null;
+      useSceneView.getState().set({ sceneReady: false, buildProgress: 0 });
     };
     // Quality change rebuilds the scene; the selection lives in stores and survives (F1-045).
   }, [runner, quality]);
@@ -184,6 +213,9 @@ function Scene3D() {
   useEffect(() => {
     sceneRef.current?.freezeCamera(view.frozen);
   }, [view.frozen]);
+  useEffect(() => {
+    sceneRef.current?.setInsets(view.insets.top, view.insets.bottom);
+  }, [view.insets, ready]);
   useEffect(() => {
     sceneRef.current?.setZone(view.zone, view.frameZone);
   }, [view.zone, view.frameZone, ready]);
@@ -214,7 +246,8 @@ function Scene3D() {
       <div ref={host} className="scene-canvas-wrap" />
       <div className="scene-vignette" />
       <div ref={labelsRef} className="label-layer" />
-      {!ready && (
+      {/* Live renders one combined build + sync status card; other layouts use this one. */}
+      {!ready && view.layout !== 'full' && (
         <div className="scene-loading">
           <div className="loader-ring" />
           <div className="muted" style={{ marginTop: 10, fontSize: 13 }}>
@@ -222,7 +255,6 @@ function Scene3D() {
           </div>
         </div>
       )}
-      {void setFollow}
     </>
   );
 }

@@ -1,8 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import { DRIVER_BY_ID, TEAM_BY_ID } from '@/data/teams';
 import { fmtCountdown, t } from '@/i18n/core';
-import { haptic } from '@/telegram/sdk';
+import { haptic, pushOverlayBack } from '@/telegram/sdk';
 import { sfx } from '@/audio/sfx';
 import { IconCheck, IconChevron, IconClose, IconInfo } from './icons';
 
@@ -282,8 +282,9 @@ export function SwipeConfirm({ label, sub, disabled, onConfirm }: { label: strin
   const ref = useRef<HTMLDivElement>(null);
   const knob = useRef<HTMLDivElement>(null);
   const [x, setX] = useState(0);
-  const drag = useRef<{ start: number; max: number } | null>(null);
+  const drag = useRef<{ start: number; max: number; moved: boolean } | null>(null);
   const done = useRef(false);
+  const [hint, setHint] = useState(false);
 
   useLayoutEffect(() => {
     if (disabled) setX(0);
@@ -303,7 +304,7 @@ export function SwipeConfirm({ label, sub, disabled, onConfirm }: { label: strin
   return (
     <div
       ref={ref}
-      className={`swipe ${disabled ? 'swipe--disabled' : ''}`}
+      className={`swipe ${disabled ? 'swipe--disabled' : ''} ${hint ? 'swipe--hint' : ''}`}
       role="button"
       tabIndex={disabled ? -1 : 0}
       aria-disabled={disabled}
@@ -317,7 +318,7 @@ export function SwipeConfirm({ label, sub, disabled, onConfirm }: { label: strin
       onPointerDown={(e) => {
         if (disabled || !ref.current) return;
         const rect = ref.current.getBoundingClientRect();
-        drag.current = { start: e.clientX - x, max: rect.width - 62 };
+        drag.current = { start: e.clientX - x, max: rect.width - 62, moved: false };
         (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
         haptic.impact('light');
       }}
@@ -325,6 +326,7 @@ export function SwipeConfirm({ label, sub, disabled, onConfirm }: { label: strin
         const d = drag.current;
         if (!d) return;
         const nx = Math.max(0, Math.min(d.max, e.clientX - d.start));
+        if (Math.abs(nx - x) > 2) d.moved = true;
         if (Math.floor(nx / 40) !== Math.floor(x / 40)) haptic.tap();
         setX(nx);
       }}
@@ -335,7 +337,14 @@ export function SwipeConfirm({ label, sub, disabled, onConfirm }: { label: strin
         if (x > d.max * 0.85) {
           setX(d.max);
           finish();
-        } else setX(0);
+        } else {
+          setX(0);
+          // A plain tap nudges the knob to teach the swipe gesture.
+          if (!d.moved && x < 8) {
+            setHint(false);
+            requestAnimationFrame(() => setHint(true));
+          }
+        }
       }}
       onPointerCancel={() => {
         drag.current = null;
@@ -347,7 +356,7 @@ export function SwipeConfirm({ label, sub, disabled, onConfirm }: { label: strin
         <span>{label}</span>
         {sub && <small>{sub}</small>}
       </div>
-      <div ref={knob} className="swipe__knob" style={{ transform: `translateX(${x}px)`, transition: drag.current ? 'none' : 'transform .35s cubic-bezier(.22,1,.36,1)' }}>
+      <div ref={knob} className="swipe__knob" onAnimationEnd={() => setHint(false)} style={{ transform: `translateX(${x}px)`, transition: drag.current ? 'none' : 'transform .35s cubic-bezier(.22,1,.36,1)' }}>
         <IconChevron size={26} />
       </div>
     </div>
@@ -359,33 +368,63 @@ export function SwipeConfirm({ label, sub, disabled, onConfirm }: { label: strin
 /* ------------------------------------------------------------------ */
 
 export function Sheet({ open, onClose, children, title, label }: { open: boolean; onClose: () => void; children: ReactNode; title?: ReactNode; label: string }) {
+  const drag = useDragControls();
+  const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => {
+    if (!open) return;
+    const prevFocus = document.activeElement as HTMLElement | null;
+    const close = () => closeRef.current();
+    const release = pushOverlayBack(close);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    window.addEventListener('keydown', onKey);
+    const id = requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }));
+    return () => {
+      cancelAnimationFrame(id);
+      release();
+      window.removeEventListener('keydown', onKey);
+      prevFocus?.focus?.({ preventScroll: true });
+    };
+  }, [open]);
+
   return (
     <AnimatePresence>
       {open && (
         <>
           <motion.div className="sheet-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
           <motion.div
+            ref={ref}
             className="sheet"
             role="dialog"
             aria-modal="true"
             aria-label={label}
+            tabIndex={-1}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+            // Dragging starts only from the header so the body can scroll freely.
             drag="y"
+            dragListener={false}
+            dragControls={drag}
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.6 }}
             onDragEnd={(_, info) => {
               if (info.offset.y > 120 || info.velocity.y > 600) onClose();
             }}
           >
-            <div className="sheet__grab" />
-            <div className="row" style={{ padding: '0 14px 0 16px' }}>
-              {title && <div className="sheet__title" style={{ flex: 1 }}>{title}</div>}
-              <button className="icon-btn" aria-label={t('ui.close')} onClick={onClose} style={{ width: 34, height: 34, marginLeft: 'auto' }}>
-                <IconClose size={16} />
-              </button>
+            <div className="sheet__head" onPointerDown={(e) => drag.start(e)}>
+              <div className="sheet__grab" />
+              <div className="row" style={{ padding: '0 8px 0 16px' }}>
+                {title && <div className="sheet__title" style={{ flex: 1 }}>{title}</div>}
+                <button className="icon-btn sheet__close" aria-label={t('ui.close')} onPointerDown={(e) => e.stopPropagation()} onClick={onClose}>
+                  <IconClose size={16} />
+                </button>
+              </div>
             </div>
             <div className="sheet__body">{children}</div>
           </motion.div>

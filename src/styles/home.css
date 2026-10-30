@@ -1021,3 +1021,113 @@
     padding: 0 14px;
   }
 }
+
+/* ---------------- Mobile legibility pass ----------------
+   Critical labels wrap instead of ellipsizing; micro labels stay ≥10px. */
+.home .hero__title {
+  font-size: clamp(14px, 4.1vw, 15.5px);
+  overflow-wrap: normal;
+}
+.home .hero__sub {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.3;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.home .hero__body {
+  grid-template-columns: 126px minmax(0, 1fr);
+}
+.home .mini-tower__row {
+  gap: 5px;
+}
+.home .mini-tower__row:first-child .mini-tower__gap {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.home .mini-tower__btn {
+  height: auto;
+  min-height: 44px;
+  padding: 4px 6px;
+  white-space: normal;
+  line-height: 1.1;
+  text-align: center;
+  gap: 3px;
+  font-size: 12px;
+}
+.home .hero__temp {
+  font-size: 10px;
+}
+.home .hero__circuit {
+  font-size: 10px;
+}
+.home .hero__circuit b {
+  font-size: 10.5px;
+}
+.home .hero__foot {
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+.home .hero__tag {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.home .featured__tag {
+  line-height: 1.3;
+}
+.home .lockbox__k {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+.home .lockbox__cell small {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+.home .featured__prize-text .kv__k {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  white-space: normal;
+  overflow: visible;
+}
+.home .stat__k {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+.home .channel__watch {
+  font-size: 10px;
+}
+.home .channel__title {
+  min-height: 0;
+}
+.home .upcoming__meeting span:last-child {
+  min-width: 0;
+  line-height: 1.25;
+}
+.home .upcoming__none {
+  font-size: 13px;
+  line-height: 1.35;
+}
+.home .promo__kicker {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+}
+.home .home__note {
+  font-size: 12px;
+  line-height: 1.4;
+}
+@media (max-width: 380px) {
+  .home .featured__prize .featured__coin {
+    display: none;
+  }
+  .home .featured__cta {
+    padding: 0 16px;
+  }
+}
+.home .tile__lvl {
+  font-size: 10px;
+}

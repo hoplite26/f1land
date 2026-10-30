@@ -3287,3 +3287,289 @@
     min-height: 160px;
   }
 }
+
+/* ================================================================== */
+/* Mobile UX pass: legibility, wrapping, hit areas, pressed states     */
+/* ================================================================== */
+
+/* Header controls keep their size but get a ≥44px hit area. */
+.topbar .balance-chip::after,
+.topbar .avatar-btn::after {
+  content: '';
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: max(100%, 44px);
+  height: max(100%, 48px);
+  transform: translate(-50%, -50%);
+}
+.topbar .balance-chip__mode {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+/* Micro labels: never below 10px. */
+.sc-kicker {
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+}
+.sc-hero__round {
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+}
+.sc-round__no span,
+.sc-season__k span,
+.sc-cd__box span {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+.sc-fine {
+  font-size: 12px;
+}
+
+/* Tiles: labels fit at 360px without ellipsis. */
+.sc-kv {
+  padding: 8px;
+}
+.sc-kv__k,
+.sc-stat__k {
+  letter-spacing: 0.03em;
+}
+.sc-stat {
+  padding: 11px 9px;
+}
+.sc-menu__s {
+  white-space: normal;
+  line-height: 1.3;
+}
+
+/* Achievements: 3 columns on phones so names never break mid-word. */
+.sc-ach-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (min-width: 480px) {
+  .sc-ach-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.sc-ach__t {
+  font-size: 11px;
+  overflow-wrap: normal;
+  hyphens: manual;
+  padding: 0 2px;
+}
+
+/* History */
+.sc-hsum {
+  gap: 4px;
+}
+.sc-hsum span {
+  white-space: normal;
+  overflow: visible;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+.sc-chips {
+  flex-wrap: wrap;
+  overflow: visible;
+  margin: 12px 0 8px;
+  padding: 0;
+}
+.sc-hrow__pick b {
+  white-space: normal;
+  line-height: 1.25;
+}
+.sc-tx__sub {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.3;
+}
+
+/* Leaderboard pinned row: first-prediction call to action. */
+.sc-lbpin__cta {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: var(--text-2);
+  background: rgba(198, 255, 61, 0.06);
+  transition: transform 0.15s var(--ease-out), background 0.2s;
+}
+.sc-lbpin__cta > span {
+  flex: 1;
+  min-width: 0;
+}
+.sc-lbpin__cta b {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--lime);
+  font-size: 13px;
+}
+.sc-lbpin__cta b .icon {
+  width: 14px;
+  height: 14px;
+}
+.sc-lbpin__cta:active {
+  transform: scale(0.98);
+  background: rgba(198, 255, 61, 0.12);
+}
+.sc-lbpin__note {
+  font-size: 12px;
+}
+
+/* Profile: zero-data guidance under the stats grid. */
+.sc-starthint {
+  width: 100%;
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 12px;
+  text-align: left;
+  border-radius: 16px;
+  border: 1px dashed rgba(198, 255, 61, 0.35);
+  background: rgba(198, 255, 61, 0.04);
+  transition: transform 0.15s var(--ease-out), background 0.2s;
+}
+.sc-starthint__txt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sc-starthint__txt b {
+  font-size: 14px;
+}
+.sc-starthint__txt .muted {
+  font-size: 13px;
+  line-height: 1.35;
+}
+.sc-starthint:active {
+  transform: scale(0.985);
+  background: rgba(198, 255, 61, 0.09);
+}
+
+/* Compact controls: ≥44px hit areas without changing their look. */
+.sc-lg-btn {
+  position: relative;
+  height: 32px;
+}
+.sc-lg-btn::after,
+.sc-mission__cta .btn--sm::after,
+.sc-empty .btn--sm::after,
+.sc-daily .sc-daily__btn::after {
+  content: '';
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+.sc-mission__cta .btn--sm,
+.sc-empty .btn--sm,
+.sc-daily .sc-daily__btn {
+  position: relative;
+}
+.sc-onb__skip {
+  height: 44px;
+}
+.sc-onb__dots {
+  gap: 0;
+}
+.sc-onb__dots button {
+  width: 44px;
+  height: 44px;
+}
+
+/* Pressed feedback for tappable rows that had none. */
+.sc-ch,
+.sc-res,
+.sc-mate,
+.sc-form__chip,
+.sc-fav__main,
+.sc-fav__open,
+.sc-lg-btn,
+.sc-onb__skip,
+.sc-pick__d,
+.sc-sess__watch,
+button.sc-tx {
+  transition: transform 0.15s var(--ease-out), background-color 0.2s, opacity 0.2s;
+}
+.sc-ch:active,
+.sc-res:active,
+.sc-mate:active,
+.sc-fav__main:active,
+.sc-pick__d:active,
+button.sc-tx:active {
+  transform: scale(0.985);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+.sc-form__chip:active,
+.sc-fav__open:active,
+.sc-lg-btn:active,
+.sc-onb__skip:active,
+.sc-sess__watch:active {
+  transform: scale(0.94);
+}
+html.reduce-motion .sc-starthint:active,
+html.reduce-motion .sc-lbpin__cta:active,
+html.reduce-motion .sc-ch:active,
+html.reduce-motion .sc-res:active,
+html.reduce-motion .sc-mate:active,
+html.reduce-motion .sc-fav__main:active,
+html.reduce-motion .sc-pick__d:active,
+html.reduce-motion button.sc-tx:active,
+html.reduce-motion .sc-form__chip:active,
+html.reduce-motion .sc-fav__open:active,
+html.reduce-motion .sc-lg-btn:active,
+html.reduce-motion .sc-onb__skip:active,
+html.reduce-motion .sc-sess__watch:active {
+  transform: none;
+}
+.sc-round__nm {
+  min-width: 0;
+}
+.sc-round__name {
+  align-items: flex-start;
+}
+.sc-round__name .flag {
+  line-height: 1.15;
+}
+.sc-lvl span {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+.sc-lb__pts i {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+/* Meeting hero: the outline sits behind the title on phones, so dim it. */
+.sc-mhero__name {
+  position: relative;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.9);
+}
+@media (max-width: 420px) {
+  .sc-mhero__map {
+    opacity: 0.5;
+  }
+}
+.sc-hsum + .card {
+  margin-top: 12px;
+}
+.sc-hrow__meet {
+  min-width: 0;
+  line-height: 1.25;
+}

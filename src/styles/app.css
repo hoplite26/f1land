@@ -714,12 +714,15 @@ input {
 }
 
 .segmented__btn {
-  flex: 1;
+  /* Content-sized, then extra space shared evenly, so long labels never spill over their pill. */
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 10px;
   position: relative;
-  height: 36px;
+  height: 40px;
   border-radius: 10px;
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: clamp(12.5px, 3.5vw, 13.5px);
   color: var(--text-2);
   z-index: 1;
   display: inline-flex;
@@ -1391,7 +1394,9 @@ input {
   -webkit-backdrop-filter: blur(14px);
   font-size: 13.5px;
   overflow: hidden;
-  animation: toast-in 0.5s var(--ease-spring) both;
+  touch-action: none;
+  /* backwards fill: the end keyframe must not pin transform, or drag-to-dismiss can't move it. */
+  animation: toast-in 0.5s var(--ease-spring) backwards;
 }
 .toast::before {
   content: '';
@@ -1526,6 +1531,20 @@ input {
   padding-bottom: calc(var(--safe-bottom) + 14px);
 }
 
+.sheet__head {
+  flex: none;
+  cursor: grab;
+  touch-action: none;
+}
+.sheet:focus {
+  outline: none;
+}
+.sheet__close {
+  width: 44px;
+  height: 44px;
+  margin-left: auto;
+  flex: none;
+}
 .sheet__grab {
   width: 44px;
   height: 5px;
@@ -1590,8 +1609,22 @@ input {
     0 0 0 1px rgba(255, 255, 255, 0.25) inset,
     0 10px 32px -8px rgba(198, 255, 61, 0.7);
   overflow: hidden;
-  touch-action: none;
+  /* Vertical pans still scroll the page; horizontal drags reach the knob. */
+  touch-action: pan-y;
   color: #0b1200;
+}
+.swipe:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 3px;
+}
+.swipe--hint .swipe__knob {
+  animation: swipe-hint 0.75s var(--ease-out);
+}
+@keyframes swipe-hint {
+  0%, 100% { transform: translateX(0); }
+  35% { transform: translateX(46px); }
+  60% { transform: translateX(10px); }
+  78% { transform: translateX(22px); }
 }
 
 .swipe--disabled {
@@ -2034,4 +2067,21 @@ html[data-nav-dir='-1'] .screen:not(.screen--flush) {
   .outcome__label {
     font-size: 12.5px;
   }
+}
+
+/* Compact controls keep their look but get a ≥44px invisible hit area. */
+.chip,
+.icon-btn,
+.help__btn {
+  position: relative;
+}
+.chip::after,
+.icon-btn::after,
+.help__btn::after {
+  content: '';
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
 }

@@ -8,7 +8,7 @@ import { CHANNELS, type DemoChannel } from '@/demo/channels';
 import { SEASON_2026, currentOrNextMeeting } from '@/data/calendar';
 import { CIRCUIT_META } from '@/data/circuits';
 import { DRIVER_BY_ID, TEAM_BY_ID } from '@/data/teams';
-import { flagEmoji, fmtClock, fmtCompact, fmtCountdown, fmtDate, fmtGap, fmtLap, fmtNumber, getLang, t } from '@/i18n/core';
+import { flagEmoji, fmtClock, fmtCompact, fmtCountdown, fmtDate, fmtGap, fmtLap, fmtNumber, fmtSec, getLang, t } from '@/i18n/core';
 import { Header } from '@/app/Header';
 import { useMapCars, useSessionNow } from '@/app/hooks';
 import { poolTexts } from '@/app/poolText';
@@ -94,8 +94,10 @@ export function HomeScreen() {
         <div className="hero__head">
           <span className="badge badge--live">LIVE</span>
           <div className="hero__titles">
-            <div className="hero__title clamp-2">{channel.title[lang]}</div>
-            <div className="hero__sub ellipsis">{circuit?.name ?? meta?.name}</div>
+            <div className="hero__title">{gpName(channel, lang)}</div>
+            <div className="hero__sub">
+              {t(`session.${channel.sessionType}`)} · {circuit?.name ?? meta?.name}
+            </div>
           </div>
           {live && !isQuali && live.totalLaps !== null && (
             <div className="lap-pill">
@@ -134,7 +136,7 @@ export function HomeScreen() {
                 go('live');
               }}
             >
-              <span className="ellipsis">{t('home.liveTiming')}</span>
+              <span>{t('home.liveTiming')}</span>
               <IconChevron size={14} />
             </button>
           </div>
@@ -160,7 +162,7 @@ export function HomeScreen() {
                   <span className="hero__circuit">
                     <b>{meta.shortName}</b>
                     <span className="num">
-                      {(meta.lengthM / 1000).toFixed(3)} km · {live?.totalLaps ?? meta.laps} {t('live.lapsShort')}
+                      {fmtNumber(meta.lengthM / 1000, 3)} {t('scr.km')} · {live?.totalLaps ?? meta.laps} {t('live.lapsShort')}
                     </span>
                   </span>
                 )}
@@ -174,7 +176,7 @@ export function HomeScreen() {
           </div>
         </div>
         <div className="hero__foot">
-          <span className="ellipsis">{t('app.tagline')}</span>
+          <span className="hero__tag">{t('app.tagline')}</span>
           <span className="hero__watch">
             <IconUsers size={14} /> {t('ui.watching', { n: fmtCompact(watching) })}
           </span>
@@ -251,7 +253,7 @@ export function HomeScreen() {
                 {arr[i - 1]?.meeting.id !== m.id && (
                   <div className="upcoming__meeting">
                     <span className="upcoming__flag">{flagEmoji(m.countryCode)}</span>
-                    <span className="ellipsis">{m.name[lang]}</span>
+                    <span>{m.name[lang]}</span>
                   </div>
                 )}
                 <div className="upcoming-row">
@@ -262,7 +264,7 @@ export function HomeScreen() {
                 </div>
               </div>
             ))}
-            {upcoming.length === 0 && <div className="muted">—</div>}
+            {upcoming.length === 0 && <div className="muted upcoming__none">{t('home2.noUpcoming')}</div>}
           </div>
         </Card>
         <Card className="tile tile--rewards" onClick={() => push({ name: 'rewards' })} ariaLabel={t('home.rewards')}>
@@ -316,7 +318,7 @@ export function HomeScreen() {
                 </span>
                 <span className="quick__label clamp-2">{label}</span>
                 <span className={`quick__state num ${lp ? 'lime' : 'muted'}`}>
-                  {!lp ? t('home2.soon') : best && best < 50 ? t('home2.upTo', { x: best.toFixed(1) }) : t('ui.joined', { n: fmtNumber(lp.book.players) })}
+                  {!lp ? t('home2.soon') : best && best < 50 ? t('home2.upTo', { x: fmtNumber(best, 1) }) : t('ui.joined', { n: fmtNumber(lp.book.players) })}
                 </span>
               </Card>
             );
@@ -337,6 +339,11 @@ export function HomeScreen() {
       <p className="home__note muted">{t('app.demoNote')}</p>
     </div>
   );
+}
+
+/** Grand Prix name without the session suffix (the session is shown separately). */
+function gpName(ch: DemoChannel, lang: 'ru' | 'en'): string {
+  return SEASON_2026.find((m) => m.round === ch.meetingRound)?.name[lang] ?? ch.title[lang];
 }
 
 function dayLabel(ms: number): string {
@@ -370,7 +377,7 @@ function FeaturedPool({ lp, now, onOpen }: { lp: LivePool; now: number; onOpen: 
           <div className="featured__kicker">
             <IconTrophy size={15} /> {t('home.featuredPool')}
           </div>
-          <div className="featured__tag ellipsis">{tx.title}</div>
+          <div className="featured__tag">{tx.title}</div>
           <div className="featured__title">{tx.question}</div>
           <div className="featured__desc">{t('home2.featuredDesc')}</div>
         </div>
@@ -502,7 +509,9 @@ function StatTiles({ live, isQuali }: { live: LiveState; isQuali: boolean }) {
             <span className="stat__who">
               {DRIVER_BY_ID[battle.b]?.code} <small className="muted">vs</small> {DRIVER_BY_ID[battle.a]?.code}
             </span>
-            <span className="stat__v num cyan">{(battle.gap / 1000).toFixed(1)}s</span>
+            <span className="stat__v num cyan">
+              {fmtSec(battle.gap, 1)} {t('scr.s')}
+            </span>
           </>
         ) : (
           <StatEmpty text={t('home2.noBattle')} />
@@ -572,8 +581,8 @@ function ChannelCard({ ch, active, live }: { ch: DemoChannel; active: boolean; l
           </svg>
         )}
       </div>
-      <div className="channel__title clamp-2">{ch.title[lang]}</div>
-      <div className="channel__meta muted ellipsis">
+      <div className="channel__title">{gpName(ch, lang)}</div>
+      <div className="channel__meta muted">
         {t(`session.${ch.sessionType}`)} · {meta?.shortName}
       </div>
       <div className="channel__foot num">
@@ -597,7 +606,7 @@ function ChannelCard({ ch, active, live }: { ch: DemoChannel; active: boolean; l
         ) : (
           <>
             <span>{isQuali ? 'Q1 · Q2 · Q3' : t('home2.laps', { n: laps })}</span>
-            <span className="muted">{meta ? t('home2.km', { n: (meta.lengthM / 1000).toFixed(1) }) : ''}</span>
+            <span className="muted">{meta ? t('home2.km', { n: fmtNumber(meta.lengthM / 1000, 1) }) : ''}</span>
           </>
         )}
       </div>

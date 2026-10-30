@@ -207,7 +207,14 @@ function CircuitBody({ circuitId }: { circuitId: string }) {
               <i className="sc-lg sc-lg--pit" />
               {t('scr.circuit.pit')}
             </span>
-            <button className="sc-lg-btn" aria-pressed={turns} onClick={() => setTurns(!turns)}>
+            <button
+              className="sc-lg-btn"
+              aria-pressed={turns}
+              onClick={() => {
+                haptic.tap();
+                setTurns(!turns);
+              }}
+            >
               {t('scr.circuit.turnNumbers')}
             </button>
           </div>
@@ -256,7 +263,7 @@ function CircuitBody({ circuitId }: { circuitId: string }) {
               {c.corners.map((cn) => (
                 <div key={cn.number} className="sc-turn">
                   <span className="sc-turn__n num">T{cn.number}</span>
-                  <span className="sc-turn__name ellipsis">{cn.name ?? (cn.direction === 'L' ? t('scr.circuit.left') : t('scr.circuit.right'))}</span>
+                  <span className="sc-turn__name">{cn.name ?? (cn.direction === 'L' ? t('scr.circuit.left') : t('scr.circuit.right'))}</span>
                   <span className="sc-turn__dir">{cn.direction === 'L' ? '↰' : '↱'}</span>
                   <span className="sc-turn__sev" aria-label={t('scr.circuit.severity', { n: cn.severity })}>
                     {[1, 2, 3, 4, 5, 6].map((k) => (
@@ -276,7 +283,13 @@ function CircuitBody({ circuitId }: { circuitId: string }) {
       <Reveal i={3} className="section">
         <div className="sc-btnrow sc-btnrow--split">
           {meeting && (
-            <button className="btn btn--ghost" onClick={() => push({ name: 'meeting', meetingId: meeting.id })}>
+            <button
+              className="btn btn--ghost"
+              onClick={() => {
+                haptic.tap();
+                push({ name: 'meeting', meetingId: meeting.id });
+              }}
+            >
               <IconCalendar size={16} />
               {t('scr.races.weekend')}
             </button>
@@ -288,8 +301,10 @@ function CircuitBody({ circuitId }: { circuitId: string }) {
             </button>
           )}
         </div>
-        {meeting && <p className="sc-fine">{t('scr.circuit.hosts', { name: meeting.name[lang], n: meeting.round })}</p>}
-        <p className="sc-fine">{t('f1.data.approximate')}</p>
+        <p className="sc-fine">
+          {meeting ? `${t('scr.circuit.hosts', { name: meeting.name[lang], n: meeting.round })} ` : ''}
+          {t('f1.data.approximate')}.
+        </p>
       </Reveal>
     </>
   );

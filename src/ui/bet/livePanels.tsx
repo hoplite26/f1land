@@ -6,7 +6,7 @@ import { useWallet } from '@/store/wallet';
 import { multiplier, usePools, type LivePool } from '@/demo/poolEngine';
 import { DRIVER_BY_ID, TEAM_BY_ID } from '@/data/teams';
 import type { LiveCar, Moment } from '@/sim/types';
-import { fmtClock, fmtGap, fmtLap, fmtNumber, fmtOdds, fmtSec, t } from '@/i18n/core';
+import { fmtClock, fmtGap, fmtLap, fmtNumber, fmtOdds, fmtSec, getLang, t } from '@/i18n/core';
 import { msUntilLock } from '@/domain/lifecycle';
 import { marketTitle, outcomeShort, poolTexts } from '@/app/poolText';
 import { useSessionNow } from '@/app/hooks';
@@ -266,7 +266,9 @@ export function FollowCard({ car, cars, quali, rivalId, onSwap, onRival }: { car
 /* ------------------------------------------------------------------ */
 
 export function PoolCard({ lp, now, onOpen, wide }: { lp: LivePool; now: number; onOpen: () => void; wide?: boolean }) {
-  const tx = poolTexts(lp.pool);
+  const lang = getLang();
+  // Cards re-render 4×/s for the countdown; the texts only change with the pool (and they format dates).
+  const tx = useMemo(() => poolTexts(lp.pool), [lp.pool, lang]);
   const mine = useWallet((s) => s.entries.some((e) => e.poolId === lp.pool.pool_id));
   const locked = lp.pool.status !== 'OPEN';
   const book = lp.book;
@@ -333,12 +335,16 @@ export function PoolsTab({ layout }: { layout: 'strip' | 'list' }) {
   const open = pools.filter((p) => p.pool.status === 'OPEN').sort((a, b) => b.priority - a.priority || Date.parse(a.pool.closes_at) - Date.parse(b.pool.closes_at));
   const pending = pools.filter((p) => p.pool.status === 'LOCKED' || p.pool.status === 'RESOLVING').slice(-6).reverse();
   const done = pools.filter((p) => p.pool.status === 'SETTLED' || p.pool.status === 'VOID').slice(-4).reverse();
+  const syncing = useLive((s) => s.loading || !s.live);
   const openPool = (lp: LivePool) => push({ name: 'pool', channelId, poolId: lp.pool.pool_id });
+  // Pools are derived from the feed: until it is synced "no pools" would be untrue.
+  if (syncing && !open.length && !pending.length) return <PanelSkeleton kind={layout === 'strip' ? 'cards' : 'list'} label={t('lv.pools.loading')} />;
   if (!open.length && !pending.length && !done.length) {
     return (
       <div className="lv-empty">
         <span className="lv-empty__pulse" />
-        {t('pool.noPools')}
+        <b className="lv-empty__title">{t('pool.noPools')}</b>
+        <span className="lv-empty__hint">{t('lv.pools.emptyHint')}</span>
       </div>
     );
   }
@@ -348,7 +354,12 @@ export function PoolsTab({ layout }: { layout: 'strip' | 'list' }) {
         {[...open, ...pending].map((lp) => (
           <PoolCard key={lp.pool.pool_id} lp={lp} now={now} onOpen={() => openPool(lp)} />
         ))}
-        {!open.length && !pending.length && <div className="lv-empty">{t('pool.noPools')}</div>}
+        {!open.length && !pending.length && (
+          <div className="lv-empty">
+            <b className="lv-empty__title">{t('pool.noPools')}</b>
+            <span className="lv-empty__hint">{t('lv.pools.emptyHint')}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -366,6 +377,21 @@ export function PoolsTab({ layout }: { layout: 'strip' | 'list' }) {
       {done.map((lp) => (
         <PoolCard key={lp.pool.pool_id} lp={lp} now={now} wide onOpen={() => openPool(lp)} />
       ))}
+    </div>
+  );
+}
+
+/** Shimmer placeholders while the live feed syncs (cards for the pool strip, rows for lists). */
+export function PanelSkeleton({ kind, label }: { kind: 'cards' | 'list' | 'rows'; label: string }) {
+  const n = kind === 'cards' ? 2 : kind === 'list' ? 3 : 6;
+  return (
+    <div className={`lv-skel lv-skel--${kind}`} role="status" aria-busy="true">
+      <span className="lv-skel__label">{label}</span>
+      <div className="lv-skel__items" aria-hidden="true">
+        {Array.from({ length: n }, (_, i) => (
+          <span key={i} className="lv-skel__item" />
+        ))}
+      </div>
     </div>
   );
 }

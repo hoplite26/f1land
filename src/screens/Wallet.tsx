@@ -103,7 +103,7 @@ export function WalletScreen() {
   return (
     <>
       <SubHeader onBack={back} />
-      <PageHead kicker="PULSE · DEMO" title={t('wallet.title')} sub={t('wallet.sub')} />
+      <PageHead kicker={t('scr.wallet.kicker')} title={t('wallet.title')} sub={t('wallet.sub')} />
       <Reveal i={0}>
         <Card glow pad={false} className="sc-whero">
           <div className="sc-whero__coins" aria-hidden="true">
@@ -201,15 +201,22 @@ export function WalletScreen() {
                     const e = tx.entryId ? byId.get(tx.entryId) : undefined;
                     const Row = e ? 'button' : 'div';
                     return (
-                      <Row key={tx.id} className="sc-tx" data-kind={tx.kind} {...(e ? { onClick: () => push({ name: 'entry', entryId: e.id }) } : {})}>
+                      <Row key={tx.id} className="sc-tx" data-kind={tx.kind} {...(e
+                          ? {
+                              onClick: () => {
+                                haptic.tap();
+                                push({ name: 'entry', entryId: e.id });
+                              },
+                            }
+                          : {})}>
                         <span className="sc-tx__ic">
                           <TxIcon kind={tx.kind} />
                         </span>
                         <span className="sc-tx__txt">
                           <b>{t(`wallet.tx.${tx.kind}`)}</b>
-                          <span className="muted ellipsis">{e ? `${e.outcomeLabel} · ${e.meetingName[lang]}` : tx.id === 'tx_welcome' ? t('scr.wallet.welcome') : fmtClock(tx.at)}</span>
+                          <span className="muted sc-tx__sub">{e ? `${e.outcomeLabel} · ${e.meetingName[lang]}` : tx.id === 'tx_welcome' ? t('scr.wallet.welcome') : fmtClock(tx.at)}</span>
                         </span>
-                        <span className={`sc-tx__amt num ${tx.amount > 0 ? 'lime' : tx.amount < 0 ? 'sc-neg' : ''}`}>{signed(tx.amount, (n) => fmtNumber(n))}</span>
+                        <span className={`sc-tx__amt num ${tx.amount > 0 ? 'lime' : ''}`}>{signed(tx.amount, (n) => fmtNumber(n))}</span>
                         {e && <IconChevron size={14} className="icon muted" />}
                       </Row>
                     );
@@ -218,7 +225,13 @@ export function WalletScreen() {
               </div>
             ))}
             {txs.length > limit && (
-              <button className="btn btn--ghost btn--block" onClick={() => setLimit(limit + 40)}>
+              <button
+                className="btn btn--ghost btn--block"
+                onClick={() => {
+                  haptic.tap();
+                  setLimit(limit + 40);
+                }}
+              >
                 {t('scr.showMore')}
               </button>
             )}

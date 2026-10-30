@@ -1,10 +1,12 @@
-/* Prediction UI building blocks (workstream D): countdown ring, outcome tiles, stake panel, ticket, confetti. */
+/* Prediction UI building blocks (workstream D): countdown ring, multiplier, outcome tiles, stake, bet dock, confetti. */
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { fmtCountdown, fmtNumber, fmtOdds, t } from '@/i18n/core';
 import { useSettings, prefersReducedMotion } from '@/store/settings';
 import { haptic } from '@/telegram/sdk';
 import { sfx } from '@/audio/sfx';
-import { IcCoins, IcMinus, IcPlus, IcTrophy, IcYes } from './icons';
+import { SwipeConfirm } from '@/ui/kit';
+import { IcCoins, IcMinus, IcPlus, IcTicket, IcTrophy, IcYes } from './icons';
 import '@/styles/pool.css';
 
 /* ------------------------------------------------------------------ */
@@ -15,7 +17,8 @@ export function CountdownRing({ ms, totalMs, size = 44, locked, label }: { ms: n
   const r = (size - 6) / 2;
   const c = 2 * Math.PI * r;
   const frac = locked ? 0 : Math.max(0, Math.min(1, totalMs > 0 ? ms / totalMs : 0));
-  const color = locked ? 'var(--muted)' : ms < 10_000 ? 'var(--red)' : frac < 0.3 ? 'var(--yellow)' : 'var(--lime)';
+  // Urgency is amber, not red: red is reserved for errors and losses.
+  const color = locked ? 'var(--muted)' : ms < 10_000 ? 'var(--orange)' : frac < 0.3 ? 'var(--yellow)' : 'var(--lime)';
   const secs = Math.ceil(ms / 1000);
   return (
     <span className={`cd-ring ${!locked && ms < 10_000 ? 'cd-ring--urgent' : ''}`} style={{ width: size, height: size }} role="timer" aria-label={label ?? fmtCountdown(ms)}>
@@ -43,6 +46,30 @@ export function CountdownRing({ ms, totalMs, size = 44, locked, label }: { ms: n
 }
 
 /* ------------------------------------------------------------------ */
+/* Multiplier                                                          */
+/* ------------------------------------------------------------------ */
+
+/** Mirrors the payout cap in demo/poolEngine `multiplier()`. */
+export const MULT_CAP = 50;
+
+/** Multiplier text; a capped estimate reads “50x макс.” instead of a bare, broken-looking 50,00x. */
+export function OddsValue({ value, className = '' }: { value: number | null; className?: string }) {
+  if (value === null) return <span className={`odds num ${className}`}>—</span>;
+  if (value >= MULT_CAP) {
+    return (
+      <span className={`odds odds--cap num ${className}`}>
+        {MULT_CAP}x<small>{t('pd.cap')}</small>
+      </span>
+    );
+  }
+  return <span className={`odds num ${className}`}>{fmtOdds(value)}x</span>;
+}
+
+export function oddsText(value: number): string {
+  return value >= MULT_CAP ? `${MULT_CAP}x ${t('pd.cap')}` : `${fmtOdds(value)}x`;
+}
+
+/* ------------------------------------------------------------------ */
 /* Outcome tile                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -61,10 +88,19 @@ export interface OutcomeTileProps {
   mine?: boolean;
   color?: string;
   ariaLabel?: string;
+  /** Tile sits in a 3+ column grid: shrink long single words instead of breaking them. */
+  compact?: boolean;
   onSelect: () => void;
 }
 
-export function OutcomeTile({ variant = 'tile', label, sub, icon, odds, checked, disabled, result, mine, color, ariaLabel, onSelect }: OutcomeTileProps) {
+/** Longest word decides the label size, so long single words shrink instead of breaking mid-word. */
+function fitClass(label: ReactNode): string {
+  if (typeof label !== 'string') return '';
+  const longest = Math.max(...label.split(/[\s–—/-]+/).map((w) => w.length));
+  return longest >= 11 ? 'ot--xlong' : longest >= 8 ? 'ot--long' : '';
+}
+
+export function OutcomeTile({ variant = 'tile', label, sub, icon, odds, checked, disabled, result, mine, color, ariaLabel, compact, onSelect }: OutcomeTileProps) {
   return (
     <button
       type="button"
@@ -72,7 +108,7 @@ export function OutcomeTile({ variant = 'tile', label, sub, icon, odds, checked,
       aria-checked={checked}
       aria-disabled={disabled}
       aria-label={ariaLabel}
-      className={`ot ot--${variant} ${checked ? 'ot--on' : ''} ${disabled ? 'ot--off' : ''} ${result ? `ot--${result}` : ''} ${mine ? 'ot--mine' : ''}`}
+      className={`ot ot--${variant} ${compact ? fitClass(label) : ''} ${checked ? 'ot--on' : ''} ${disabled ? 'ot--off' : ''} ${result ? `ot--${result}` : ''} ${mine ? 'ot--mine' : ''}`}
       style={color ? ({ ['--ot-c' as string]: color } as CSSProperties) : undefined}
       onClick={() => {
         if (disabled) {
@@ -99,23 +135,28 @@ export function OutcomeTile({ variant = 'tile', label, sub, icon, odds, checked,
         <span className="ot__label">{label}</span>
         {sub && <span className="ot__sub">{sub}</span>}
       </span>
-      <span className="ot__odds num">{odds === null ? '—' : `${fmtOdds(odds)}x`}</span>
+      <OddsValue value={odds} className="ot__odds" />
       {mine && <span className="ot__mine">{t('pl.yourPick')}</span>}
     </button>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Stake panel                                                         */
+/* Stake                                                               */
 /* ------------------------------------------------------------------ */
 
-const CHIPS = [10, 25, 50, 100, 250, 500];
+export const MIN_STAKE = 10;
+const MAX_STAKE = 5000;
+const CHIPS = [10, 50, 100, 250, 500];
 
-export function StakePanel({ value, onChange, balance, min = 10, max = 5000, disabled }: { value: number; onChange: (v: number) => void; balance: number; min?: number; max?: number; disabled?: boolean }) {
-  const cap = Math.max(min, Math.min(max, Math.floor(balance)));
-  const clamp = (v: number) => Math.max(min, Math.min(cap, Math.round(v)));
+const stakeCap = (balance: number) => Math.max(MIN_STAKE, Math.min(MAX_STAKE, Math.floor(balance)));
+const stakeStep = (v: number) => (v >= 500 ? 50 : v >= 100 ? 25 : 5);
+
+export function StakePanel({ value, onChange, balance, disabled, onDone }: { value: number; onChange: (v: number) => void; balance: number; disabled?: boolean; onDone?: () => void }) {
+  const cap = stakeCap(balance);
+  const clamp = (v: number) => Math.max(MIN_STAKE, Math.min(cap, Math.round(v)));
   const [draft, setDraft] = useState<string | null>(null);
-  const step = value >= 500 ? 50 : value >= 100 ? 25 : 5;
+  const step = stakeStep(value);
   const set = (v: number) => {
     const n = clamp(v);
     if (n !== value) haptic.tap();
@@ -128,21 +169,34 @@ export function StakePanel({ value, onChange, balance, min = 10, max = 5000, dis
         <span className="stk__bal num">
           <IcCoins size={13} /> {t('pl.balance')} <b>{fmtNumber(Math.floor(balance))}</b>
         </span>
+        {onDone && (
+          <button
+            type="button"
+            className="stk__done"
+            onClick={() => {
+              haptic.tap();
+              onDone();
+            }}
+          >
+            {t('pd.done')}
+          </button>
+        )}
       </div>
       <div className="stk__row">
-        <button type="button" className="stk__btn" aria-label={t('stake.decrease')} disabled={disabled || value <= min} onClick={() => set(value - step)}>
+        <button type="button" className="stk__btn" aria-label={t('stake.decrease')} disabled={disabled || value <= MIN_STAKE} onClick={() => set(value - step)}>
           <IcMinus size={18} />
         </button>
         <label className="stk__val">
           <input
             className="num"
             inputMode="numeric"
+            enterKeyHint="done"
             aria-label={t('pool.stake')}
             disabled={disabled}
             value={draft ?? String(value)}
             onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, '').slice(0, 5))}
             onBlur={() => {
-              if (draft !== null) set(Number(draft) || min);
+              if (draft !== null) set(Number(draft) || MIN_STAKE);
               setDraft(null);
             }}
             onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
@@ -159,7 +213,7 @@ export function StakePanel({ value, onChange, balance, min = 10, max = 5000, dis
             {c}
           </button>
         ))}
-        <button type="button" className={`stk__chip stk__chip--max ${value === cap && cap > min ? 'stk__chip--on' : ''}`} disabled={disabled || balance < min} onClick={() => set(cap)}>
+        <button type="button" className={`stk__chip stk__chip--max ${value === cap && cap > MIN_STAKE ? 'stk__chip--on' : ''}`} disabled={disabled || balance < MIN_STAKE} onClick={() => set(cap)}>
           MAX
         </button>
       </div>
@@ -167,48 +221,179 @@ export function StakePanel({ value, onChange, balance, min = 10, max = 5000, dis
   );
 }
 
+/** Compact − value + control; the value opens the full stake editor. */
+function StakeStepper({ value, onChange, balance, onOpen }: { value: number; onChange: (v: number) => void; balance: number; onOpen: () => void }) {
+  const cap = stakeCap(balance);
+  const step = stakeStep(value);
+  const nudge = (dir: 1 | -1) => {
+    const n = Math.max(MIN_STAKE, Math.min(cap, value + dir * step));
+    if (n === value) {
+      // At the minimum stake or the balance cap: tell the thumb, not just the eye.
+      haptic.notify('warning');
+      return;
+    }
+    haptic.tap();
+    onChange(n);
+  };
+  return (
+    <div className="bd__stk" role="group" aria-label={t('pd.stake')}>
+      <button type="button" className={`bd__stk-btn ${value <= MIN_STAKE ? 'is-off' : ''}`} aria-label={t('pd.decrease')} aria-disabled={value <= MIN_STAKE} onClick={() => nudge(-1)}>
+        <IcMinus size={16} />
+      </button>
+      <button
+        type="button"
+        className="bd__stk-val"
+        aria-label={`${t('pd.editStake')}: ${fmtNumber(value)} PULSE`}
+        aria-expanded={false}
+        onClick={() => {
+          haptic.tap();
+          onOpen();
+        }}
+      >
+        <span className="num">{fmtNumber(value)}</span>
+        <small>PULSE</small>
+      </button>
+      <button type="button" className={`bd__stk-btn ${value >= cap ? 'is-off' : ''}`} aria-label={t('pd.increase')} aria-disabled={value >= cap} onClick={() => nudge(1)}>
+        <IcPlus size={16} />
+      </button>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
-/* Ticket                                                              */
+/* Bet dock (sticky, thumb zone)                                       */
 /* ------------------------------------------------------------------ */
 
-export function Ticket({ pick, pickIcon, odds, stake, children, onClear }: { pick: string | null; pickIcon?: ReactNode; odds: number | null; stake: number; children?: ReactNode; onClear?: () => void }) {
-  const potential = odds ? Math.round(stake * odds) : null;
-  return (
-    <section className="tkt" aria-label={t('pool.ticket')}>
-      <div className="tkt__head">
-        <span className="tkt__title">{t('pool.ticket')}</span>
-        {pick && <span className="tkt__count">{t('pl.onePick')}</span>}
-        <span className="tkt__demo">DEMO</span>
-      </div>
-      <div className={`tkt__pick ${pick ? '' : 'tkt__pick--empty'}`}>
-        {pick ? (
-          <>
-            {pickIcon && <span className="tkt__pick-icon">{pickIcon}</span>}
-            <span className="tkt__pick-label ellipsis">{pick}</span>
-            <span className="tkt__pick-odds num">{odds ? `${fmtOdds(odds)}x` : '—'}</span>
-            {onClear && (
-              <button type="button" className="tkt__clear" aria-label={t('ui.close')} onClick={onClear}>
-                ×
-              </button>
-            )}
-          </>
-        ) : (
-          <span className="muted">{t('pool.choose')}</span>
-        )}
-      </div>
-      {children}
-      <div className="tkt__ret">
-        <div>
-          <div className="tkt__ret-k">{t('pool.potential')}</div>
-          <div className="tkt__ret-v num">
-            {potential !== null ? fmtNumber(potential) : '—'} <small>PULSE</small>
+export interface DockStatus {
+  icon: ReactNode;
+  title: string;
+  sub?: string;
+  tone?: 'muted' | 'cyan' | 'lime' | 'yellow';
+  action?: { label: string; onClick: () => void };
+}
+
+export function BetDock({
+  status,
+  pick,
+  odds,
+  stake,
+  onStake,
+  balance,
+  onConfirm,
+  onWallet,
+}: {
+  /** Entries are not accepted: show why and where to go next. */
+  status?: DockStatus | null;
+  pick: { label: string; icon?: ReactNode } | null;
+  odds: number | null;
+  stake: number;
+  onStake: (v: number) => void;
+  balance: number;
+  onConfirm: () => void;
+  onWallet: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const reduced = prefersReducedMotion(useSettings((s) => s.motion));
+  if (status) {
+    return (
+      <div className={`bd bd--status bd--${status.tone ?? 'muted'}`} role="status">
+        <div className="bd__status">
+          <span className="bd__status-icon">{status.icon}</span>
+          <div className="bd__status-t">
+            <b>{status.title}</b>
+            {status.sub && <span>{status.sub}</span>}
           </div>
-        </div>
-        <div className="tkt__ret-side">
-          <div className="tkt__ret-k">{t('pool.estimate')}</div>
-          <div className="num tkt__ret-m">{odds ? `${fmtOdds(odds)}x` : '—'}</div>
+          {status.action && (
+            <button
+              type="button"
+              className="bd__action"
+              onClick={() => {
+                haptic.tap();
+                status.action!.onClick();
+              }}
+            >
+              {status.action.label}
+            </button>
+          )}
         </div>
       </div>
+    );
+  }
+  const noFunds = balance < MIN_STAKE;
+  const potential = odds ? Math.round(stake * odds) : null;
+  const reveal = reduced ? { initial: false as const } : { initial: { opacity: 0, height: 0 }, animate: { opacity: 1, height: 'auto' }, exit: { opacity: 0, height: 0 }, transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const } };
+  return (
+    <section className={`bd ${pick ? 'bd--ready' : 'bd--empty'}`} aria-label={t('pool.ticket')}>
+      <AnimatePresence initial={false}>
+        {editing && (
+          <motion.div key="stk" className="bd__editor" {...reveal}>
+            <StakePanel value={stake} onChange={onStake} balance={balance} onDone={() => setEditing(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <div className="bd__main">
+        <div className="bd__pick" aria-live="polite">
+          <span className={`bd__pick-icon ${pick ? '' : 'bd__pick-icon--empty'}`}>{pick ? (pick.icon ?? <IcTicket size={20} />) : <IcTicket size={20} />}</span>
+          {pick ? (
+            <div className="bd__pick-t">
+              <span className="bd__pick-k">{t('pd.yourPick')}</span>
+              <b className="bd__pick-l">{pick.label}</b>
+              <OddsValue value={odds} className="bd__odds" />
+            </div>
+          ) : (
+            <div className="bd__pick-t">
+              <b className="bd__pick-l">{t('pd.hintTitle')}</b>
+              <span className="bd__pick-s">{t('pd.hintSub')}</span>
+            </div>
+          )}
+        </div>
+        {!editing &&
+          (pick ? (
+            <StakeStepper value={stake} onChange={onStake} balance={balance} onOpen={() => setEditing(true)} />
+          ) : (
+            <button
+              type="button"
+              className="bd__pill"
+              aria-label={`${t('pd.editStake')}: ${fmtNumber(stake)} PULSE`}
+              onClick={() => {
+                haptic.tap();
+                setEditing(true);
+              }}
+            >
+              <span className="bd__pill-k">{t('pd.stake')}</span>
+              <span className="bd__pill-v num">
+                {fmtNumber(stake)} <small>PULSE</small>
+              </span>
+            </button>
+          ))}
+      </div>
+      <AnimatePresence initial={false}>
+        {pick && (
+          <motion.div key="cta" className="bd__cta" {...reveal}>
+            {noFunds ? (
+              <div className="bd__nofunds" role="alert">
+                <IcCoins size={18} />
+                <div>
+                  <b>{t('pd.noFunds')}</b>
+                  <span>{t('pd.noFundsSub', { min: MIN_STAKE })}</span>
+                </div>
+                <button
+                  type="button"
+                  className="bd__action"
+                  onClick={() => {
+                    haptic.tap();
+                    onWallet();
+                  }}
+                >
+                  {t('pd.wallet')}
+                </button>
+              </div>
+            ) : (
+              <SwipeConfirm label={t('pd.swipe')} sub={potential !== null ? t('pd.swipeSub', { stake: fmtNumber(stake), win: fmtNumber(potential) }) : undefined} onConfirm={onConfirm} />
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }

@@ -1,7 +1,7 @@
 /** Shell, Home and My Pools strings (workstream A). */
 export default {
   ru: {
-    'shell.demoBalance': 'DEMO-баланс PULSE',
+    'shell.demoBalance': 'Демо-баланс PULSE',
     'shell.topUp': 'Пополнить',
     'shell.level': 'Ур. {n}',
     'home2.raceInProgress': 'Гонка идёт',
@@ -25,6 +25,7 @@ export default {
     'home2.nextSession': 'Далее',
     'home2.inDays': 'через {n} дн.',
     'home2.trackGreen': 'Зелёный флаг',
+    'home2.noUpcoming': 'Сезон завершён — до встречи в 2027',
     'mp.inPlay': 'В игре',
     'mp.wonTotal': 'Выиграно',
     'mp.hitRate': 'Точность',
@@ -71,6 +72,7 @@ export default {
     'home2.nextSession': 'Next',
     'home2.inDays': 'in {n} d',
     'home2.trackGreen': 'Green flag',
+    'home2.noUpcoming': 'Season complete — see you in 2027',
     'mp.inPlay': 'In play',
     'mp.wonTotal': 'Won',
     'mp.hitRate': 'Hit rate',
