@@ -99,4 +99,27 @@ export const sfx = {
     tone(740, 0.12, 'square', 0.08);
     tone(740, 0.12, 'square', 0.08, 0.2);
   },
+  /** Winning settlement: rising arpeggio, a held chord and a crowd-like shimmer. */
+  celebrate: () => {
+    [392, 523, 659, 784, 1046].forEach((f, i) => tone(f, 0.2, 'triangle', 0.16, i * 0.075));
+    [1046, 1318, 1568].forEach((f) => tone(f, 0.9, 'sine', 0.07, 0.4));
+    noise(1.1, 0.05, 0.38, 5200);
+  },
+  levelUp: () => {
+    tone(440, 0.5, 'sawtooth', 0.05, 0, 880);
+    [880, 1108, 1318].forEach((f, i) => tone(f, 0.28, 'triangle', 0.12, 0.42 + i * 0.07));
+  },
+  unlock: () => {
+    tone(1318, 0.1, 'triangle', 0.1);
+    tone(1760, 0.22, 'sine', 0.09, 0.08);
+  },
+  checkIn: () => {
+    tone(660, 0.1, 'triangle', 0.12);
+    tone(990, 0.16, 'triangle', 0.12, 0.08);
+    noise(0.35, 0.04, 0.06, 3000);
+  },
+  /** Calm, single low note for a settled loss — informative, not punishing. */
+  soft: () => tone(330, 0.36, 'sine', 0.1),
+  /** Very quiet tick used by count-up animations. */
+  tick: () => tone(2200, 0.02, 'square', 0.02),
 };

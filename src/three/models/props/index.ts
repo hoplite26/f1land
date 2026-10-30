@@ -18,7 +18,12 @@ export {
   getVCMaterial,
   MeshBuilder,
   Rng,
+  injectSiteLight,
+  withSiteLight,
+  resetSiteMap,
+  SITE_FRAG_PARS,
   type Glow,
+  type SiteLightOptions,
 } from './core';
 export { createCrowd, type CrowdModelExt } from './crowd';
 export { createGrandstand, STAND_ROW_DEPTH, STAND_ROW_RISE, type GrandstandOptions, type GrandstandModel } from './grandstand';

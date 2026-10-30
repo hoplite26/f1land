@@ -1,10 +1,11 @@
-/* Prediction UI building blocks (workstream D): countdown ring, outcome tiles, stake panel, ticket, confetti. */
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { fmtCountdown, fmtNumber, fmtOdds, t } from '@/i18n/core';
+/* Prediction UI building blocks: countdown ring, outcome tiles, confetti, stat cells, pool meta. */
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { fmtCountdown, fmtNumber, t } from '@/i18n/core';
 import { useSettings, prefersReducedMotion } from '@/store/settings';
 import { haptic } from '@/telegram/sdk';
 import { sfx } from '@/audio/sfx';
-import { IcCoins, IcMinus, IcPlus, IcTrophy, IcYes } from './icons';
+import { IcCoins, IcTrophy, IcYes } from './icons';
+import { OddsTicker } from './motionBits';
 import '@/styles/pool.css';
 
 /* ------------------------------------------------------------------ */
@@ -60,11 +61,13 @@ export interface OutcomeTileProps {
   result?: 'win' | 'lose' | null;
   mine?: boolean;
   color?: string;
+  /** Share of the DEMO pool already on this outcome (0..1). */
+  share?: number | null;
   ariaLabel?: string;
   onSelect: () => void;
 }
 
-export function OutcomeTile({ variant = 'tile', label, sub, icon, odds, checked, disabled, result, mine, color, ariaLabel, onSelect }: OutcomeTileProps) {
+export function OutcomeTile({ variant = 'tile', label, sub, icon, odds, checked, disabled, result, mine, color, share, ariaLabel, onSelect }: OutcomeTileProps) {
   return (
     <button
       type="button"
@@ -79,8 +82,10 @@ export function OutcomeTile({ variant = 'tile', label, sub, icon, odds, checked,
           haptic.notify('warning');
           return;
         }
-        haptic.impact('light');
-        sfx.select();
+        if (!checked) {
+          haptic.tap();
+          sfx.select();
+        }
         onSelect();
       }}
     >
@@ -99,117 +104,14 @@ export function OutcomeTile({ variant = 'tile', label, sub, icon, odds, checked,
         <span className="ot__label">{label}</span>
         {sub && <span className="ot__sub">{sub}</span>}
       </span>
-      <span className="ot__odds num">{odds === null ? '—' : `${fmtOdds(odds)}x`}</span>
+      <OddsTicker odds={odds} className="ot__odds" />
       {mine && <span className="ot__mine">{t('pl.yourPick')}</span>}
-    </button>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Stake panel                                                         */
-/* ------------------------------------------------------------------ */
-
-const CHIPS = [10, 25, 50, 100, 250, 500];
-
-export function StakePanel({ value, onChange, balance, min = 10, max = 5000, disabled }: { value: number; onChange: (v: number) => void; balance: number; min?: number; max?: number; disabled?: boolean }) {
-  const cap = Math.max(min, Math.min(max, Math.floor(balance)));
-  const clamp = (v: number) => Math.max(min, Math.min(cap, Math.round(v)));
-  const [draft, setDraft] = useState<string | null>(null);
-  const step = value >= 500 ? 50 : value >= 100 ? 25 : 5;
-  const set = (v: number) => {
-    const n = clamp(v);
-    if (n !== value) haptic.tap();
-    onChange(n);
-  };
-  return (
-    <div className={`stk ${disabled ? 'stk--off' : ''}`}>
-      <div className="stk__head">
-        <span className="stk__k">{t('pool.stake')}</span>
-        <span className="stk__bal num">
-          <IcCoins size={13} /> {t('pl.balance')} <b>{fmtNumber(Math.floor(balance))}</b>
+      {share !== undefined && share !== null && share > 0 && (
+        <span className="ot__share" aria-hidden="true">
+          <span style={{ transform: `scaleX(${Math.min(1, share)})` }} />
         </span>
-      </div>
-      <div className="stk__row">
-        <button type="button" className="stk__btn" aria-label={t('stake.decrease')} disabled={disabled || value <= min} onClick={() => set(value - step)}>
-          <IcMinus size={18} />
-        </button>
-        <label className="stk__val">
-          <input
-            className="num"
-            inputMode="numeric"
-            aria-label={t('pool.stake')}
-            disabled={disabled}
-            value={draft ?? String(value)}
-            onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, '').slice(0, 5))}
-            onBlur={() => {
-              if (draft !== null) set(Number(draft) || min);
-              setDraft(null);
-            }}
-            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-          />
-          <span className="stk__unit">PULSE</span>
-        </label>
-        <button type="button" className="stk__btn" aria-label={t('stake.increase')} disabled={disabled || value >= cap} onClick={() => set(value + step)}>
-          <IcPlus size={18} />
-        </button>
-      </div>
-      <div className="stk__chips" role="group" aria-label={t('pool.stake')}>
-        {CHIPS.map((c) => (
-          <button type="button" key={c} className={`stk__chip num ${value === c ? 'stk__chip--on' : ''}`} disabled={disabled || c > balance} onClick={() => set(c)}>
-            {c}
-          </button>
-        ))}
-        <button type="button" className={`stk__chip stk__chip--max ${value === cap && cap > min ? 'stk__chip--on' : ''}`} disabled={disabled || balance < min} onClick={() => set(cap)}>
-          MAX
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Ticket                                                              */
-/* ------------------------------------------------------------------ */
-
-export function Ticket({ pick, pickIcon, odds, stake, children, onClear }: { pick: string | null; pickIcon?: ReactNode; odds: number | null; stake: number; children?: ReactNode; onClear?: () => void }) {
-  const potential = odds ? Math.round(stake * odds) : null;
-  return (
-    <section className="tkt" aria-label={t('pool.ticket')}>
-      <div className="tkt__head">
-        <span className="tkt__title">{t('pool.ticket')}</span>
-        {pick && <span className="tkt__count">{t('pl.onePick')}</span>}
-        <span className="tkt__demo">DEMO</span>
-      </div>
-      <div className={`tkt__pick ${pick ? '' : 'tkt__pick--empty'}`}>
-        {pick ? (
-          <>
-            {pickIcon && <span className="tkt__pick-icon">{pickIcon}</span>}
-            <span className="tkt__pick-label ellipsis">{pick}</span>
-            <span className="tkt__pick-odds num">{odds ? `${fmtOdds(odds)}x` : '—'}</span>
-            {onClear && (
-              <button type="button" className="tkt__clear" aria-label={t('ui.close')} onClick={onClear}>
-                ×
-              </button>
-            )}
-          </>
-        ) : (
-          <span className="muted">{t('pool.choose')}</span>
-        )}
-      </div>
-      {children}
-      <div className="tkt__ret">
-        <div>
-          <div className="tkt__ret-k">{t('pool.potential')}</div>
-          <div className="tkt__ret-v num">
-            {potential !== null ? fmtNumber(potential) : '—'} <small>PULSE</small>
-          </div>
-        </div>
-        <div className="tkt__ret-side">
-          <div className="tkt__ret-k">{t('pool.estimate')}</div>
-          <div className="num tkt__ret-m">{odds ? `${fmtOdds(odds)}x` : '—'}</div>
-        </div>
-      </div>
-    </section>
+      )}
+    </button>
   );
 }
 

@@ -11,7 +11,8 @@ import { settlePool } from '@/domain/settlement';
 import { advancePool } from '@/domain/lifecycle';
 import type { Pool, Settlement } from '@/domain/types';
 import { buildManifest, channelLaps, getChannel } from '@/demo/channels';
-import { poolTexts } from './poolText';
+import { outcomeLabel, poolTexts } from './poolText';
+import { currentSeasonRank, queueSettlement } from '@/ui/celebrate/store';
 
 let engine: PoolEngine | null = null;
 
@@ -39,6 +40,7 @@ export function applySettlement(entry: Entry, pool: Pool, finalMultiplier: numbe
   const mult = finalMultiplier ?? entry.finalMultiplier ?? entry.estimate;
   const payout = state === 'WON' ? Math.round(entry.stake * mult) : state === 'VOID' ? entry.stake : 0;
   const corrected = entry.state !== 'PENDING' && prev && !prev.provisional && prev.settlement_revision !== s.settlement_revision;
+  const rankBefore = silent || corrected || state === 'VOID' ? null : currentSeasonRank();
   wallet.settleEntry(entry.id, state, payout, s, mult);
   wallet.updateEntry(entry.id, { pool });
   if (silent) return;
@@ -49,14 +51,21 @@ export function applySettlement(entry: Entry, pool: Pool, finalMultiplier: numbe
     haptic.notify('warning');
     return;
   }
-  if (state === 'WON') {
-    toasts.push({ kind: 'win', title: t('toast.won', { n: payout }), body: q }, 5200);
-    haptic.win();
-    sfx.win();
-  } else if (state === 'LOST') {
-    toasts.push({ kind: 'lose', title: t('toast.lost'), body: q });
-    haptic.notify('error');
-    sfx.lose();
+  if (state === 'WON' || state === 'LOST') {
+    // The celebration layer owns haptics/sfx for decided entries (full-screen win, calm loss card).
+    const w = s.winner_outcome_id ? pool.outcomes.find((o) => o.id === s.winner_outcome_id) : undefined;
+    queueSettlement({
+      state,
+      payout,
+      stake: entry.stake,
+      mult,
+      title: q,
+      pick: entry.outcomeLabel,
+      winner: w ? outcomeLabel(w, pool.market_id) : null,
+      entryId: entry.id,
+      rankBefore,
+      xp: state === 'WON' ? 60 : 10,
+    });
   } else {
     toasts.push({ kind: 'warn', title: t('toast.void', { n: payout }), body: q });
     haptic.notify('warning');
